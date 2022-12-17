@@ -1,15 +1,17 @@
 from rl import Env
+from rl.agent import *
+from rl.action import *
 
 
-env = Env.make(id="TestHumannoidEnv", render_mode="human")
+env = Env.make(name="TestHumannoidEnv", render_mode="human")
+#agent = Agent()
 
-observation, info = env.reset(seed=42)
+state, info = env.reset(42)
 for _ in range(10000):
-    action = env.action_space.sample()
-    #print('action dimension', action.shape)
-    observation, reward, terminated, truncated, info = env.step(action)
-    #print('obs dimension', observation.shape)
+    action = env.sampleAction()
+    #action = agent.act()
+    feedback = env.step(action)
 
-    if terminated or truncated:
-        observation, info = env.reset()
+    if feedback.terminated or feedback.truncated:
+        state, info = env.reset()
 env.close()

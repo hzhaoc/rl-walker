@@ -1,7 +1,7 @@
 from ..util import *
 
 
-class Evaluatable:
+class Evaluatable(ABC):
     """
     represent evaluation component for an evaluatable object
     """

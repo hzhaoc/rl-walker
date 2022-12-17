@@ -4,8 +4,8 @@ from rl.action import Action
 from rl.util import *
 
 
-class Agent:
-    # TODO: complement this framework
+class Agent(ABC):
+    # TODO: complete this framework
     """
     policy agent framework
 
@@ -15,7 +15,7 @@ class Agent:
 
     Encapsulation comes from 2 places:
     1. class inheritence/composition
-    2. clas member method/variable
+    2. class member method/variable
     
     """
 
@@ -30,7 +30,7 @@ class Agent:
         self.critic.eval(S, r)
 
 
-class Actor(Evaluatable):
+class Actor(Evaluatable, ABC):
     def __init__(self) -> None:
         super().__init__()
 
@@ -44,7 +44,7 @@ class Actor(Evaluatable):
         raise NotImplementedError
 
 
-class Critic(Evaluatable):
+class Critic(Evaluatable, ABC):
     def __init__(self) -> None:
         super().__init__()
 
