@@ -6,7 +6,6 @@ from rl.env import EnvFeedback
 
 
 class Agent(ABC):
-    # TODO: complete this framework
     """
     policy agent framework
 
