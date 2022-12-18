@@ -9,8 +9,11 @@ env = Env.make(name="TestHumannoidEnv", render_mode="human")
 state, info = env.reset(42)
 for _ in range(10000):
     action = env.sampleAction()
-    #action = agent.act()
+    #action = agent.act(feedback.state)
+
     feedback = env.step(action)
+    
+    #agent.update(feedback)
 
     if feedback.terminated or feedback.truncated:
         state, info = env.reset()
