@@ -10,5 +10,6 @@ class Value:
     def __init__(self, reward: float) -> None:
         self._reward = reward
 
+    @property
     def reward(self) -> float:
         return self._reward
