@@ -20,13 +20,16 @@ class ActionUpdatable(Updatable):
 
 class ActionUpdatableFinite(Updatable):
     def __init__(self, rate: float = None, 
-                       action_space: dict = {}) -> None:
+                       action_space: dict = {},
+                       discount: float = 0.95,
+                ) -> None:
         super().__init__()
         self._C = defaultdict(defaultdict(float))  # outer key is state, inner key is action, value is count
         self._A = action_space
         self._dimS = None  # state 1-d dimension
         self._dimA = None  # action 1-d dimension
         self._rate = rate  # if no update rate is specified, default using size of current sample
+        self._discount = discount
 
     @override
     def update(self):

@@ -23,6 +23,8 @@ class Agent(ABC):
     def __init__(self, **kwargs) -> None:
         self.actor = Actor(self)
         self.critic = Critic(self)
+        self._feedback = EnvFeedback()  # current feedback
+        self._a = Action() # current action
 
     def act(self, S: State) -> Action:
         return self.actor.act(S)

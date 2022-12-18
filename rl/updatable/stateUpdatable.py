@@ -41,7 +41,6 @@ class StateUpdatableFinite(Updatable):
         if len(self._C) > MAX_SIZE:
             raise ValueError("over {MAX_SIZE} possibel states, is this really a finite state space?")
 
-    
     def _getRate(self, s: tuple) -> float:
         return self._rate if not Val.isEmptyRate(self._rate) else 1 / self._C[s]
 
