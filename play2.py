@@ -1,5 +1,4 @@
 import numpy as np
 
-t = (1,2)
-t[1] = 3
-print(t)
+arr = np.array([1,2,3])
+print()
