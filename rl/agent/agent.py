@@ -3,6 +3,7 @@ from rl.state import State
 from rl.action import Action
 from rl.util import *
 from rl.env import EnvFeedback
+import numpy as np
 
 
 class Agent(ABC):
@@ -19,18 +20,16 @@ class Agent(ABC):
     
     """
 
-    def __init__(self, **kwargs) -> None:
-        self.actor = Actor(self)
-        self.critic = Critic(self)
-        self._feedback = EnvFeedback()  # current feedback
-        self._a = Action() # current action
+    def __init__(self) -> None:
+        return
 
-    def act(self, S: State) -> Action:
-        return self.actor.act(S)
+    @abstract
+    def act(self, state: np.ndarray) -> np.ndarray:
+        raise NotImplementedError
 
+    @abstract
     def update(self, feedback: EnvFeedback) -> None:
-        self.critic.update(feedback)  # value function should be updated first to provde latest estimation adjustment to actor
-        self.actor.update(feedback)
+        raise NotImplementedError
 
 
 class Actor(Updatable, ABC):
@@ -39,12 +38,11 @@ class Actor(Updatable, ABC):
     specifically, what actions to take based on environment feedback such as reward, state, etc,
     and how to learn to maximzie long term rewrd thru this state-action-state-... interaction
     """
-    def __init__(self, agent: Agent) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._agent = agent
 
     @abstract
-    def act(self, S: State) -> Action:
+    def act(self, s: np.ndarray) -> np.ndarray:
         """take what the action thinks as the best action from feedback"""
         raise NotImplementedError
 
@@ -56,9 +54,8 @@ class Actor(Updatable, ABC):
 
 
 class Critic(Updatable, ABC):
-    def __init__(self, agent: Agent) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._agent = agent
 
     @override
     @abstract

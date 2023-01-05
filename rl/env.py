@@ -3,11 +3,7 @@ from typing import overload, Literal, Union, Any
 import gymnasium as gym
 import importlib
 from rl.test.testEnv import *
-import numpy
-import copy
-from rl.value import Value
-from rl.state import State
-from rl.action import Action
+import numpy as np
 
 
 ENV_PKG = "rl.test.testEnv"
@@ -43,23 +39,34 @@ class Env:
     def __init__(self, envInner: Any, **kwargs) -> None:
         self.envInner = envInner
 
-    def step(self, action: Action) -> EnvFeedback:
-        _state, _reward, _terminated, _truncated, _info = self.envInner.step(action.val())  # must make sure return is Matched
-        return EnvFeedback(state = State(state=_state),
-                           value = Value(reward=_reward),
+    def step(self, action: np.ndarray) -> EnvFeedback:
+        _state, _reward, _terminated, _truncated, _info = self.envInner.step(action)  # must make sure return is Matched
+        return EnvFeedback(state = _state,
+                           reward = _reward,
                            terminated = _terminated,
                            truncated = _truncated,
                            info = _info)
 
-    def reset(self, seed: int = 0) -> Union[State, dict]:
-        _state, _info = self.envInner.reset(seed=seed)
-        return State(state=_state), _info
+    def reset(self, seed: int = 0) -> Union[np.ndarray, dict]:
+        return self.envInner.reset(seed=seed)
 
     def close(self) -> None:
         self.envInner.close()
 
-    def sampleAction(self) -> Action:
-        return Action(self.envInner.action_space.sample())
+    def sample_action(self) -> np.ndarray:
+        HumanoidEnv().observation_space.shape
+        return self.envInner.action_space.sample()
+
+    def sample_state(self) -> np.ndarray:
+        return self.envInner.observation_space.sample()
+
+    @property
+    def shape_action(self) -> tuple:
+        return self.envInner.action_space.shape
+
+    @property
+    def shape_state(self) -> tuple:
+        return self.envInner.observation_space.shape
 
     @staticmethod
     @overload
@@ -94,26 +101,22 @@ class Env:
 
 class EnvFeedback:
     """
-    basically like a C++ struct that holds a group of variable values
+    like a struct/enum/tuple/container that *reference* a group of variable values
     which together forms an envrionment feedback to agent
     """
 
-    def __init__(self, state: State = None,
-                       value: Value = None,
-                       terminated: bool = None,
-                       truncated: bool = None,
-                       info: dict = None) -> None:
+    def __init__(self, state: np.ndarray = np.ndarray([]),
+                       reward: float = None,
+                       terminated: bool = False,
+                       truncated: bool = False,
+                       info: dict = {}) -> None:
         self.state = state
-        self.value = value
+        self.reward = reward
         self.terminated = terminated
         self.truncated = truncated
-        self.info = copy.deepcopy(info)
+        self.info = info 
 
     def isEmpty(self) -> bool:
-        return (self.state == None) \
-            or (self.value == None) \
-            or (self.terminated == None) \
-            or (self.truncated == None) \
-            or (self.info == None)
+        return (self.state.__len__ == 0) or (self.value == None)
 
 

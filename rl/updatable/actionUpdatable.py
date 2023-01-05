@@ -1,3 +1,5 @@
+# TODO: remove this file
+
 from rl.updatable.updatable import Updatable
 from rl.util import *
 from rl.updatable import MAX_SIZE
@@ -14,8 +16,9 @@ class ActionUpdatable(Updatable):
         super().__init__()
 
     @override
+    @abstract
     def update(self):
-        return
+        raise NotImplementedError
 
 
 class ActionUpdatableFinite(Updatable):
