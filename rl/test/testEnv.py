@@ -1,6 +1,6 @@
 from gymnasium.envs.mujoco.humanoid_v4 import HumanoidEnv
+from gymnasium.envs.classic_control.pendulum import PendulumEnv
 from rl.util import *
-
 
 class TestHumannoidEnv(HumanoidEnv):
     """
@@ -35,4 +35,16 @@ class TestHumannoidEnv(HumanoidEnv):
         #   - penalizing energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
         #   - penalizing 
         # TODO: add contact_cost in cost function?
+        return super().step(action)
+
+
+class TestPendulumEnv(PendulumEnv):
+    def __init__(
+        self, 
+        **kwargs):
+        super().__init__(
+            **kwargs)
+
+    @override(PendulumEnv)
+    def step(self, action):
         return super().step(action)

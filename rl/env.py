@@ -21,7 +21,7 @@ ENVS_GYMNASIUM = ["CartPole-v0", "CartPole-v1", "MountainCar-v0", "MountainCarCo
                 "Ant-v2", "Ant-v3", "Ant-v4",
                 "HumanoidStandup-v2", "HumanoidStandup-v4",
                 "Humanoid-v2", "Humanoid-v3", "Humanoid-v4"]
-ENVS_TEST = ["TestHumannoidEnv"]
+ENVS_TEST = ["TestHumannoidEnv", "TestPendulumEnv"]
 
 
 class Env:
@@ -39,13 +39,10 @@ class Env:
     def __init__(self, envInner: Any, **kwargs) -> None:
         self.envInner = envInner
 
-    def step(self, action: np.ndarray) -> EnvFeedback:
-        _state, _reward, _terminated, _truncated, _info = self.envInner.step(action)  # must make sure return is Matched
-        return EnvFeedback(state = _state,
-                           reward = _reward,
-                           terminated = _terminated,
-                           truncated = _truncated,
-                           info = _info)
+    def step(self, action: np.ndarray) -> tuple:
+        # must make sure return is Matched
+        _state, _reward, _terminated, _truncated, _info = self.envInner.step(action)
+        return _state, _reward, _terminated, _truncated, _info
 
     def reset(self, seed: int = 0) -> Union[np.ndarray, dict]:
         return self.envInner.reset(seed=seed)
@@ -97,26 +94,3 @@ class Env:
                 return Env(envInner = cls(**kwargs))
             except (ImportError, AttributeError) as e:
                 raise ImportError(f"{ENV_PKG}.{name}")
-
-
-class EnvFeedback:
-    """
-    like a struct/enum/tuple/container that *reference* a group of variable values
-    which together forms an envrionment feedback to agent
-    """
-
-    def __init__(self, state: np.ndarray = np.ndarray([]),
-                       reward: float = None,
-                       terminated: bool = False,
-                       truncated: bool = False,
-                       info: dict = {}) -> None:
-        self.state = state
-        self.reward = reward
-        self.terminated = terminated
-        self.truncated = truncated
-        self.info = info 
-
-    def isEmpty(self) -> bool:
-        return (self.state.__len__ == 0) or (self.value == None)
-
-

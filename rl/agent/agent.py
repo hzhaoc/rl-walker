@@ -2,7 +2,6 @@ from rl.updatable.updatable import Updatable
 from rl.state import State
 from rl.action import Action
 from rl.util import *
-from rl.env import EnvFeedback
 import numpy as np
 
 
@@ -28,7 +27,7 @@ class Agent(ABC):
         raise NotImplementedError
 
     @abstract
-    def update(self, feedback: EnvFeedback) -> None:
+    def update(self) -> None:
         raise NotImplementedError
 
 
