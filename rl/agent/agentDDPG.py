@@ -23,26 +23,31 @@ class AgentDDPG(Agent):
         - policy takes state and gives a determinsitic action which it expects to yield highest value
         - the policy is approximated by a different neural network that inputs state, and outputs expected optimal action.
     """
-    def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000) -> None:
+    def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, momentum: float = 0.9) -> None:
         super().__init__()
         # TODO: hyperparams for gamma (rewards NPV), (critic/actor) learning rate, neural network layer size
+        # TODO; initial weights (see DDPG paper)
         self.env = env
         self.critic = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0], 
                                   hidden_size=256,#self.env.shape_state[0]+self.env.shape_action[0], 
                                   output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
-                                  lr=critic_lr)
+                                  lr=critic_lr,
+                                  momentum=0.9)
         self.actor = _ActorDDPG(input_size=self.env.shape_state[0], 
-                                hidden_size=256,#self.env.shape_state[0], 
+                                hidden_size=256,#self.env.shape_state[0],
                                 output_size=self.env.shape_action[0],
-                                lr=actor_lr)
+                                lr=actor_lr,
+                                momentum=0.9)
         self.critic_target = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0], 
                                   hidden_size=256,#self.env.shape_state[0]+self.env.shape_action[0], 
                                   output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
-                                  lr=critic_lr)
+                                  lr=critic_lr,
+                                  momentum=0.9)
         self.actor_target = _ActorDDPG(input_size=self.env.shape_state[0], 
                                 hidden_size=256,#self.env.shape_state[0], 
                                 output_size=self.env.shape_action[0],
-                                lr=actor_lr)
+                                lr=actor_lr,
+                                momentum=0.9)
         for param, param_target in zip(self.actor.parameters(), self.actor_target.parameters()):
             param_target.data.copy_(param.data)
         for param, param_target in zip(self.critic.parameters(), self.critic_target.parameters()):
@@ -94,14 +99,15 @@ class AgentDDPG(Agent):
 
 
 class _ActorDDPG(nn.Module, Actor):
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4) -> None:
+    # TODO； add noise for exploration
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, momentum: float = 0.9) -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         self.layer2 = nn.Linear(hidden_size, hidden_size)
         self.layer3 = nn.Linear(hidden_size, output_size)
     
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually adaptive learning rate
-        self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=0.9)  # SGD with momentum
+        self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum)  # SGD with momentum
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
@@ -128,7 +134,7 @@ class _CriticDDPG(nn.Module, Critic):
     a non-linear approximator modeled as fully-connected neural networkthat that evaluates given action and state
     inputs action + state vector, outputs a scalar value
     """
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, gamma: float = 0.95) -> None:
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, momentum: float = 0.9) -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         self.layer2 = nn.Linear(hidden_size, hidden_size)
@@ -136,9 +142,10 @@ class _CriticDDPG(nn.Module, Critic):
 
         self.criterion = nn.MSELoss()
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually adaptive learning rate
-        self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=0.9)  # SGD with momentum
+        self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=momentum)  # SGD with momentum
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        # TODO: move action tinput o a middle layer
         x = torch.cat([state, action], 1)
         x = relu(self.layer1(x))
         x = relu(self.layer2(x))

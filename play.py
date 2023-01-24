@@ -22,7 +22,8 @@ agent = AgentDDPG(env=env,
                   gamma=0.95, 
                   critic_lr=1e-3, 
                   actor_lr=1e-3,
-                  bufsize=50_000
+                  bufsize=50_000,
+                  momentum=0.9,
         )
 
 fileRewards = open("rewards.txt", "w+")
