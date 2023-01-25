@@ -15,41 +15,28 @@ def normedState(state):
 def denormedAction(action):
     return action * 4 - 2
 
+env = Env.make(name="TestPendulumEnv", render_mode="human") # NOTE 1
 #env = Env.make(name="TestHumannoidEnv", render_mode="human")
-env = Env.make(name="TestPendulumEnv", render_mode="human")
 agent = AgentDDPG(env=env, 
-                  tau=0.1, 
-                  gamma=0.95, 
-                  critic_lr=1e-3, 
-                  actor_lr=1e-3,
-                  bufsize=50_000,
-                  momentum=0.9,
+                  tau=0.05, # target network weight update rate
+                  gamma=0.95, # net present value discount rate
+                  critic_lr=1e-3, # critic network weight learning rate
+                  actor_lr=1e-3, # actor network weight learning rate
+                  bufsize=100_000, # experiance buffer size for sampling
+                  optim_momentum=1e-1,  # stochastic gradient descent momentum
+                  hidden_layer_size=256, # network approximator number of neuron / activations in each middle layer
+                  actor_last_layer_weight_init=3e-3, # actor network last layer initial uniform distribution radius around 0
+                  critic_last_layer_weight_init=3e-4, # critic network last layer initial uniform distribution range
         )
 
 fileRewards = open("rewards.txt", "w+")
 
-"""
-| Num | Action | Min  | Max |
-|-----|--------|------|-----|
-| 0   | Torque | -2.0 | 2.0 |
-
-| Num | Observation      | Min  | Max |
-|-----|------------------|------|-----|
-| 0   | x = cos(theta)   | -1.0 | 1.0 |
-| 1   | y = sin(theta)   | -1.0 | 1.0 |
-| 2   | Angular Velocity | -8.0 | 8.0 |
-
-reward = [-16.x, 0]
-"""
-
 window = Queue(maxlen=500)
 for j in range(MAX_EPOCHS):
     state, _ = env.reset(random.randint(1, 100))
-    #state = normedState(state)
 
     for i in range(MAX_STEPS):
         action = agent.act(state)
-        #action = denormedAction(action)
         next_state, reward, terminated, truncated, info = env.step(action)
 
         next_state = normedState(next_state)
@@ -65,6 +52,20 @@ for j in range(MAX_EPOCHS):
             break
         state = next_state
         
-# fileActions.close()
 fileRewards.close()
 env.close()
+
+
+""" NOTE 1
+| Num | Action | Min  | Max |
+|-----|--------|------|-----|
+| 0   | Torque | -2.0 | 2.0 |
+
+| Num | Observation      | Min  | Max |
+|-----|------------------|------|-----|
+| 0   | x = cos(theta)   | -1.0 | 1.0 |
+| 1   | y = sin(theta)   | -1.0 | 1.0 |
+| 2   | Angular Velocity | -8.0 | 8.0 |
+
+reward = [-16.x, 0]
+"""
