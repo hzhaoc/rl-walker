@@ -9,24 +9,20 @@ import random
 MAX_STEPS = 500
 MAX_EPOCHS = 20_000
 
-def normedState(state):
-    return np.multiply((state - np.array([-1, -1, -8])), np.array([1/2, 1/2, 1/16]))
-
-def denormedAction(action):
-    return action * 4 - 2
-
 env = Env.make(name="TestPendulumEnv", render_mode="human") # NOTE 1
 #env = Env.make(name="TestHumannoidEnv", render_mode="human")
 agent = AgentDDPG(env=env, 
                   tau=0.05, # target network weight update rate
                   gamma=0.95, # net present value discount rate
-                  critic_lr=1e-3, # critic network weight learning rate
-                  actor_lr=1e-3, # actor network weight learning rate
+                  critic_lr=1e-4, # critic network weight learning rate
+                  actor_lr=1e-2, # actor network weight learning rate
                   bufsize=100_000, # experiance buffer size for sampling
                   optim_momentum=1e-1,  # stochastic gradient descent momentum
                   hidden_layer_size=256, # network approximator number of neuron / activations in each middle layer
                   actor_last_layer_weight_init=3e-3, # actor network last layer initial uniform distribution radius around 0
                   critic_last_layer_weight_init=3e-4, # critic network last layer initial uniform distribution range
+                  critic_bn_eps=1e-4,  # critic network batch norm epsilon for scaling stability
+                  critic_bn_momentum=1e-2,  # critic network batch norm runnign mean and standard deviation momentum 
         )
 
 fileRewards = open("rewards.txt", "w+")
@@ -39,7 +35,6 @@ for j in range(MAX_EPOCHS):
         action = agent.act(state)
         next_state, reward, terminated, truncated, info = env.step(action)
 
-        next_state = normedState(next_state)
         print(f"epoch {j} step {i}: action {action}, reward {reward}")
         agent.buf.push(state, action, reward, next_state, terminated)
         if len(agent.buf) > 128:

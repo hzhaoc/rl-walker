@@ -25,7 +25,7 @@ class AgentDDPG(Agent):
         - the policy is approximated by a different neural network that inputs state, and outputs expected optimal action.
     """
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1, hidden_layer_size: int = 256, 
-                       actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4) -> None:
+                       actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2) -> None:
         super().__init__()
         self.env = env
         self.critic = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0], 
@@ -39,7 +39,9 @@ class AgentDDPG(Agent):
                                 output_size=self.env.shape_action[0],
                                 lr=actor_lr,
                                 optim_momentum=optim_momentum,
-                                last_layer_weight_init=actor_last_layer_weight_init)
+                                last_layer_weight_init=actor_last_layer_weight_init,
+                                eps=critic_bn_eps,
+                                bn_momentum=critic_bn_momentum)
         self.critic_target = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0], 
                                          hidden_size=hidden_layer_size,
                                          output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
@@ -51,7 +53,9 @@ class AgentDDPG(Agent):
                                        output_size=self.env.shape_action[0],
                                        lr=actor_lr,
                                        optim_momentum=optim_momentum,
-                                       last_layer_weight_init=actor_last_layer_weight_init)
+                                       last_layer_weight_init=actor_last_layer_weight_init,
+                                       eps=critic_bn_eps,
+                                       bn_momentum=critic_bn_momentum)
         for param, param_target in zip(self.actor.parameters(), self.actor_target.parameters()):
             param_target.data.copy_(param.data)
         for param, param_target in zip(self.critic.parameters(), self.critic_target.parameters()):
@@ -106,13 +110,16 @@ class AgentDDPG(Agent):
 
 class _ActorDDPG(nn.Module, Actor):
     # TODO； add noise for exploration
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3) -> None:
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3, 
+                       eps: float = 1e-4, bn_momentum: float = 1e-2) -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
         self.layer2 = nn.Linear(hidden_size, hidden_size)
+        self.layer2bn = nn.BatchNorm1d(num_features=hidden_size, eps=eps, momentum=bn_momentum)
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
         self.layer3 = nn.Linear(hidden_size, output_size)
+        self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)
         nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
     
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
@@ -121,8 +128,8 @@ class _ActorDDPG(nn.Module, Actor):
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
         x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
-        x = relu(self.layer2(x))
-        x = tanh(self.layer3(x))
+        x = relu(self.layer2bn(self.layer2(x)))
+        x = tanh(self.layer3bn(self.layer3(x)))
         return 2 * x
 
     @override(Actor)
@@ -142,6 +149,8 @@ class _CriticDDPG(nn.Module, Critic):
     """
     a non-linear approximator modeled as fully-connected neural networkthat that evaluates given action and state
     inputs action + state vector, outputs a scalar value
+
+    NOTE: batch norm in evaluation network decrease performance. 
     """
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4) -> None:
         super().__init__()
@@ -149,8 +158,10 @@ class _CriticDDPG(nn.Module, Critic):
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
         self.layer2 = nn.Linear(hidden_size, hidden_size)
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
-        self.layer3 = nn.Linear(hidden_size, output_size)
-        nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
+        self.layer3 = nn.Linear(hidden_size, hidden_size)
+        nn.init.uniform_(self.layer3.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
+        self.layer4 = nn.Linear(hidden_size, output_size)
+        nn.init.uniform_(self.layer4.weight, -last_layer_weight_init, last_layer_weight_init)
 
         self.criterion = nn.MSELoss()
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
@@ -161,7 +172,8 @@ class _CriticDDPG(nn.Module, Critic):
         x = torch.cat([state, action], 1)
         x = relu(self.layer1(x))
         x = relu(self.layer2(x))
-        x = (self.layer3(x))
+        x = relu(self.layer3(x))
+        x = (self.layer4(x))
         return x
 
     @override(Critic)
