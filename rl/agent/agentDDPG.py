@@ -28,7 +28,8 @@ class AgentDDPG(Agent):
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2) -> None:
         super().__init__()
         self.env = env
-        self.critic = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0], 
+        self.critic = _CriticDDPG(state_space=self.env.shape_state[0],
+                                  action_space=self.env.shape_action[0],
                                   hidden_size=hidden_layer_size, 
                                   output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
                                   lr=critic_lr,
@@ -42,7 +43,8 @@ class AgentDDPG(Agent):
                                 last_layer_weight_init=actor_last_layer_weight_init,
                                 eps=critic_bn_eps,
                                 bn_momentum=critic_bn_momentum)
-        self.critic_target = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0], 
+        self.critic_target = _CriticDDPG(state_space=self.env.shape_state[0],
+                                         action_space=self.env.shape_action[0],
                                          hidden_size=hidden_layer_size,
                                          output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
                                          lr=critic_lr,
@@ -152,28 +154,24 @@ class _CriticDDPG(nn.Module, Critic):
 
     NOTE: batch norm in evaluation network decrease performance. 
     """
-    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4) -> None:
+    def __init__(self, state_space: int, action_space: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4) -> None:
         super().__init__()
-        self.layer1 = nn.Linear(input_size, hidden_size)
-        nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
-        self.layer2 = nn.Linear(hidden_size, hidden_size)
+        self.layer1 = nn.Linear(state_space, hidden_size)
+        nn.init.uniform_(self.layer1.weight, -math.sqrt(1/state_space), math.sqrt(1/state_space))
+        self.layer2 = nn.Linear(hidden_size+action_space, hidden_size)
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
-        self.layer3 = nn.Linear(hidden_size, hidden_size)
-        nn.init.uniform_(self.layer3.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
-        self.layer4 = nn.Linear(hidden_size, output_size)
-        nn.init.uniform_(self.layer4.weight, -last_layer_weight_init, last_layer_weight_init)
+        self.layer3 = nn.Linear(hidden_size, output_size)
+        nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
 
         self.criterion = nn.MSELoss()
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
         self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum)  # SGD with momentum
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        # TODO: move action input to middle layer
-        x = torch.cat([state, action], 1)
+        x = state
         x = relu(self.layer1(x))
-        x = relu(self.layer2(x))
-        x = relu(self.layer3(x))
-        x = (self.layer4(x))
+        x = relu(self.layer2(torch.concat([x, action], 1)))
+        x = (self.layer3(x))
         return x
 
     @override(Critic)

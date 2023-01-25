@@ -12,10 +12,10 @@ MAX_EPOCHS = 20_000
 env = Env.make(name="TestPendulumEnv", render_mode="human") # NOTE 1
 #env = Env.make(name="TestHumannoidEnv", render_mode="human")
 agent = AgentDDPG(env=env, 
-                  tau=0.05, # target network weight update rate
+                  tau=0.02, # target network weight update rate
                   gamma=0.95, # net present value discount rate
                   critic_lr=1e-4, # critic network weight learning rate
-                  actor_lr=1e-2, # actor network weight learning rate
+                  actor_lr=2e-3, # actor network weight learning rate
                   bufsize=100_000, # experiance buffer size for sampling
                   optim_momentum=1e-1,  # stochastic gradient descent momentum
                   hidden_layer_size=256, # network approximator number of neuron / activations in each middle layer
