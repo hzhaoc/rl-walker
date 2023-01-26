@@ -30,6 +30,10 @@ class Agent(ABC):
     def update(self) -> None:
         raise NotImplementedError
 
+    @abstract
+    def reset(self) -> None:
+        raise NotImplementedError
+
 
 class Actor(Updatable, ABC):
     """

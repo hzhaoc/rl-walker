@@ -23,13 +23,17 @@ agent = AgentDDPG(env=env,
                   critic_last_layer_weight_init=3e-4, # critic network last layer initial uniform distribution range
                   critic_bn_eps=1e-4,  # critic network batch norm epsilon for scaling stability
                   critic_bn_momentum=1e-2,  # critic network batch norm runnign mean and standard deviation momentum 
+                  actor_noise_switch=False,  # actor noise for exploration. some problem needs exploration more than others
+                  #critic_layer_depth=3,  # critic network number of layers. action will be entered in the last second layer. MIN=3
+                  #actor_layer_depth=3,  # actor network layer depth. MIN=3
         )
 
 fileRewards = open("rewards.txt", "w+")
 
 window = Queue(maxlen=500)
 for j in range(MAX_EPOCHS):
-    state, _ = env.reset(random.randint(1, 100))
+    state, _ = env.reset()
+    agent.reset()
 
     for i in range(MAX_STEPS):
         action = agent.act(state)

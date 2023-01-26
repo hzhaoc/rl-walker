@@ -10,6 +10,7 @@ import torch.autograd
 import torch.optim as optim
 from rl.buffer import Buffer
 import math
+from rl.noise import *
 
 
 class AgentDDPG(Agent):
@@ -25,7 +26,8 @@ class AgentDDPG(Agent):
         - the policy is approximated by a different neural network that inputs state, and outputs expected optimal action.
     """
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1, hidden_layer_size: int = 256, 
-                       actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2) -> None:
+                       actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
+                       actor_noise_switch=False) -> None:
         super().__init__()
         self.env = env
         self.critic = _CriticDDPG(state_space=self.env.shape_state[0],
@@ -42,7 +44,8 @@ class AgentDDPG(Agent):
                                 optim_momentum=optim_momentum,
                                 last_layer_weight_init=actor_last_layer_weight_init,
                                 eps=critic_bn_eps,
-                                bn_momentum=critic_bn_momentum)
+                                bn_momentum=critic_bn_momentum,
+                                noise=OUNoise(action_dim=self.env.shape_action[0], low=self.env.action_low, high=self.env.action_high) if actor_noise_switch else EmptyNoise())
         self.critic_target = _CriticDDPG(state_space=self.env.shape_state[0],
                                          action_space=self.env.shape_action[0],
                                          hidden_size=hidden_layer_size,
@@ -64,12 +67,12 @@ class AgentDDPG(Agent):
             param_target.data.copy_(param.data)
         self.tau = tau   # target network update rate
         self.gamma = gamma  # future reward discount rate
+
         self.buf = Buffer(bufsize)
 
     @override(Agent)
     def act(self, state: np.ndarray) -> np.ndarray:
-        self.actor.eval()
-        return self.actor.forward(torch.FloatTensor(state).reshape(1, -1)).detach().numpy().flatten()
+        return self.actor.act(torch.FloatTensor(state).reshape(1, -1))
 
     @override(Agent)
     def update(self, batch_size: int) -> None:
@@ -98,7 +101,6 @@ class AgentDDPG(Agent):
         critic_loss.backward()
         self.critic.optimizer.step()
         # update online actor
-        self.actor.train()
         self.actor.optimizer.zero_grad()
         actor_loss = -1 * self.critic.forward(s0, self.actor.forward(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
         actor_loss.backward()
@@ -109,11 +111,15 @@ class AgentDDPG(Agent):
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
 
+    @override(Agent)
+    def reset(self) -> None:
+        """reset anythigng if it makes sense"""
+        self.actor.noise.reset()
+
 
 class _ActorDDPG(nn.Module, Actor):
-    # TODO； add noise for exploration
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3, 
-                       eps: float = 1e-4, bn_momentum: float = 1e-2) -> None:
+                       eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise()) -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
@@ -126,6 +132,8 @@ class _ActorDDPG(nn.Module, Actor):
     
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
         self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum)  # SGD with momentum
+
+        self.noise = noise
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
@@ -135,8 +143,12 @@ class _ActorDDPG(nn.Module, Actor):
         return 2 * x
 
     @override(Actor)
-    def act(self, state: np.ndarray) -> np.ndarray:
-        return self.forward(torch.FloatTensor(state)).detach().numpy()
+    def act(self, state: torch.Tensor) -> np.ndarray:
+        self.eval()
+        action = self.forward(state).detach().numpy().flatten()
+        action = self.noise.get_action(action)
+        self.train()  # back to default mode
+        return action
 
     @override(Actor)
     def update(self, s0: torch.Tensor, critic_fwd: Any) -> None:

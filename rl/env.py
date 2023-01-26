@@ -65,6 +65,22 @@ class Env:
     def shape_state(self) -> tuple:
         return self.envInner.observation_space.shape
 
+    @property
+    def action_low(self) -> tuple:
+        return self.envInner.action_space.low
+
+    @property
+    def action_high(self) -> tuple:
+        return self.envInner.action_space.high
+
+    @property
+    def observation_low(self) -> tuple:
+        return self.envInner.observation_space.low
+
+    @property
+    def observation_high(self) -> tuple:
+        return self.envInner.observation_space.high
+
     @staticmethod
     @overload
     def make(name: Literal["CartPole-v0", "CartPole-v1", "MountainCar-v0", "MountainCarContinuous-v0", "Pendulum-v1", "Acrobot-v1",
