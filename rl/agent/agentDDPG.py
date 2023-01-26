@@ -124,7 +124,7 @@ class _ActorDDPG(nn.Module, Actor):
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
         self.layer2 = nn.Linear(hidden_size, hidden_size)
-        self.layer2bn = nn.BatchNorm1d(num_features=hidden_size, eps=eps, momentum=bn_momentum)
+        self.layer2bn = nn.BatchNorm1d(num_features=hidden_size, eps=eps, momentum=bn_momentum)  # NOTE 1
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
         self.layer3 = nn.Linear(hidden_size, output_size)
         self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)
@@ -193,3 +193,11 @@ class _CriticDDPG(nn.Module, Critic):
     @override(Actor)
     def validate(self) -> None:
         return
+
+
+"""NOTE 1
+batch norm to reduce internal covariance shift, especially when previouos layer is nonlinear. 
+@see Batch Norm 2015 Paper. 
+`eps` for stability of scaler post unit normalization
+`momentum` for running population mean and variance. If set to None, all seen batches will be used to calcualte mean and variance
+"""

@@ -1,4 +1,5 @@
 **/__pycache__/
 *.pyc
 rewards*.txt
-play2.py
+play*.py
+/play

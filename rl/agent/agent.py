@@ -1,6 +1,4 @@
 from rl.updatable.updatable import Updatable
-from rl.state import State
-from rl.action import Action
 from rl.util import *
 import numpy as np
 
