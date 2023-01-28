@@ -5,15 +5,16 @@ import numpy as np
 
 
 class Buffer:
-    def __init__(self, max_size):
+    def __init__(self, max_size, sample_size=128):
         self.max_size = max_size
         self.buffer = deque(maxlen=max_size)
+        self.sample_size = sample_size
     
     def push(self, state, action, reward, next_state, done):
         experience = (state, action, np.array([reward]), next_state, done)
         self.buffer.append(experience)
 
-    def sample(self, batch_size):
+    def sample(self):
         # TODO: make this faster; less correlated sampling (see batch norm 2015 paper)
         state_batch = []
         action_batch = []
@@ -21,7 +22,7 @@ class Buffer:
         next_state_batch = []
         done_batch = []
 
-        batch = random.sample(self.buffer, batch_size)
+        batch = random.sample(self.buffer, self.sample_size)
 
         for experience in batch:
             state, action, reward, next_state, done = experience
@@ -35,3 +36,7 @@ class Buffer:
 
     def __len__(self):
         return len(self.buffer)
+
+    @property
+    def batch_size(self):
+        return self.sample_size

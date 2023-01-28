@@ -4,3 +4,4 @@ rewards*.txt
 play*.py
 /play
 /rl/example
+MUJOCO_LOG.TXT
