@@ -33,7 +33,8 @@ class TestHumannoidEnv(HumanoidEnv):
     def step(self, action):
         # TODO: customize reward function as one sees fit
         # things to consider:
-        #   - penalizing energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
+        #   - penalize energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
+        #   - penalize two-feet-in-the-air situation (it's walker not runner. hmm does not seem like a good reward component)
         #   - normalize each reward component and assign wegiht to each component. this way, we can specify a reward function to more intentionally guide agent learning 
         #   - add contact_cost in cost function?
         return super().step(action)
