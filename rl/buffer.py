@@ -15,7 +15,7 @@ class Buffer:
         self.buffer.append(experience)
 
     def sample(self):
-        # TODO: make this faster; less correlated sampling (see batch norm 2015 paper)
+        # TODO: make this faster
         state_batch = []
         action_batch = []
         reward_batch = []

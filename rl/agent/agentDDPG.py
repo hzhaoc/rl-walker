@@ -17,6 +17,7 @@ PARAMS_MIN = -1e8
 PARAMS_MAX = 1e8
 
 
+# TODO: a Param class to contain all hyper parameters
 class AgentDDPG(Agent):
     """
     Deep Deterministic Policy Gradient agent

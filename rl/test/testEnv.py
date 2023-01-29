@@ -2,6 +2,7 @@ from gymnasium.envs.mujoco.humanoid_v4 import HumanoidEnv
 from gymnasium.envs.classic_control.pendulum import PendulumEnv
 from rl.util import *
 
+
 class TestHumannoidEnv(HumanoidEnv):
     """
     see humanoid.py#HumandoidEnv for detailed descriptions about the environment
@@ -31,9 +32,10 @@ class TestHumannoidEnv(HumanoidEnv):
     @override(HumanoidEnv)
     def step(self, action):
         # TODO: customize reward function as one sees fit
-        # should we also consider:
+        # things to consider:
         #   - penalizing energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
-        # TODO: add contact_cost in cost function?
+        #   - normalize each reward component and assign wegiht to each component. this way, we can specify a reward function to more intentionally guide agent learning 
+        #   - add contact_cost in cost function?
         return super().step(action)
 
 

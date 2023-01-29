@@ -38,7 +38,8 @@ class EmptyNoise(Noise):
         return action
 
 
-# TODO: make exploration nosie more intelligent: decay in upward macro trend of reward and increase in downward trend. Also has lower and upper limit
+# TODO: make exploration nosie more intelligent: explore more in worse situation; explore less in better situation; also set upper and lower limit comapred to action space range
+#       how to measure if a situation is getting worse or better? analyze epoch-reward long-term trend
 class OUNoise(Noise):
     """
     Ornstein-Ulhenbeck Process
