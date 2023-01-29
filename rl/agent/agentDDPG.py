@@ -11,6 +11,10 @@ import torch.optim as optim
 from rl.buffer import Buffer
 import math
 from rl.noise import *
+    
+
+PARAMS_MIN = -1e8
+PARAMS_MAX = 1e8
 
 
 class AgentDDPG(Agent):
@@ -28,7 +32,7 @@ class AgentDDPG(Agent):
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1, hidden_layer_size: int = 256, 
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
                        actor_noise_switch=False, actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
-                       critic_loss_weight_regularization_l2: float = 0.0) -> None:
+                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6) -> None:
         super().__init__()
         self.env = env
         self.critic = _CriticDDPG(state_space=self.env.shape_state[0],
@@ -39,6 +43,7 @@ class AgentDDPG(Agent):
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
                                   loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
+                                  gradient_clip=critic_gradient_clip,
                                   )
         self.actor = _ActorDDPG(input_size=self.env.shape_state[0], 
                                 hidden_size=hidden_layer_size,
@@ -55,6 +60,7 @@ class AgentDDPG(Agent):
                                               max_sigma=actor_noise_sigma, 
                                               theta=actor_noise_theta) if actor_noise_switch else EmptyNoise(),
                                 loss_weight_regularization_l2=actor_loss_weight_regularization_l2,
+                                gradient_clip=actor_gradient_clip,
                                 )
         self.critic_target = _CriticDDPG(state_space=self.env.shape_state[0],
                                          action_space=self.env.shape_action[0],
@@ -64,6 +70,7 @@ class AgentDDPG(Agent):
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
                                          loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
+                                         gradient_clip=critic_gradient_clip,
                                          )
         self.actor_target = _ActorDDPG(input_size=self.env.shape_state[0], 
                                        hidden_size=hidden_layer_size,
@@ -74,6 +81,7 @@ class AgentDDPG(Agent):
                                        eps=critic_bn_eps,
                                        bn_momentum=critic_bn_momentum,
                                        loss_weight_regularization_l2=actor_loss_weight_regularization_l2,
+                                       gradient_clip=actor_gradient_clip,
                                        )
         for param, param_target in zip(self.actor.parameters(), self.actor_target.parameters()):
             param_target.data.copy_(param.data)
@@ -117,11 +125,13 @@ class AgentDDPG(Agent):
         q_true_biased = r0 + self.gamma * self.critic_target.forward(s1, self.actor_target.forward(s1))
         critic_loss = self.critic.criterion(q_modeled, q_true_biased.detach())  # target network is deteched from gradient descent
         critic_loss.backward()
+        nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), max_norm=self.critic.gradient_clip)
         self.critic.optimizer.step()
         # update online actor
         self.actor.optimizer.zero_grad()
         actor_loss = -1 * self.critic.forward(s0, self.actor.forward(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
         actor_loss.backward()
+        nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), max_norm=self.actor.gradient_clip)
         self.actor.optimizer.step()
         # update offline (target) critic & actor
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
@@ -137,7 +147,7 @@ class AgentDDPG(Agent):
 
 class _ActorDDPG(nn.Module, Actor):
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3, 
-                       eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise(), loss_weight_regularization_l2: float = 0.0) -> None:
+                       eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise(), loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6) -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
@@ -150,7 +160,7 @@ class _ActorDDPG(nn.Module, Actor):
     
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
         self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
-
+        self.gradient_clip = gradient_clip
         self.noise = noise
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
@@ -158,7 +168,7 @@ class _ActorDDPG(nn.Module, Actor):
         x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
         x = relu(self.layer2bn(self.layer2(x)))
         x = tanh(self.layer3bn(self.layer3(x)))
-        return 2 * x  # TODO: generalize to actual scale
+        return 0.4 * x  # TODO: generalize to actual scale
 
     @override(Actor)
     def act(self, state: torch.Tensor) -> np.ndarray:
@@ -185,7 +195,7 @@ class _CriticDDPG(nn.Module, Critic):
     NOTE: batch norm in evaluation network decrease performance. 
     """
     def __init__(self, state_space: int, action_space: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4, 
-    loss_weight_regularization_l2: float = 0.0) -> None:
+    loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6) -> None:
         super().__init__()
         self.layer1 = nn.Linear(state_space+action_space, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/state_space), math.sqrt(1/state_space))
@@ -197,6 +207,7 @@ class _CriticDDPG(nn.Module, Critic):
         self.criterion = nn.MSELoss()
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
         self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
+        self.gradient_clip = gradient_clip
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         x = torch.concat([state, action], 1)
