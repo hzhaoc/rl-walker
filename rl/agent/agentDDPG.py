@@ -30,15 +30,14 @@ class AgentDDPG(Agent):
         - policy takes state and gives a determinsitic action which it expects to yield highest value
         - the policy is approximated by a different neural network that inputs state, and outputs expected optimal action.
     """
-    def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1, hidden_layer_size: int = 256, 
+    def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1,
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
                        actor_noise_switch=False, actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
                        critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6) -> None:
         super().__init__()
         self.env = env
-        self.critic = _CriticDDPG(state_space=self.env.shape_state[0],
-                                  action_space=self.env.shape_action[0],
-                                  hidden_size=hidden_layer_size, 
+        self.critic = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0],
+                                  hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                   output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
@@ -47,7 +46,7 @@ class AgentDDPG(Agent):
                                   gradient_clip=critic_gradient_clip,
                                   )
         self.actor = _ActorDDPG(input_size=self.env.shape_state[0], 
-                                hidden_size=hidden_layer_size,
+                                hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                 output_size=self.env.shape_action[0],
                                 lr=actor_lr,
                                 optim_momentum=optim_momentum,
@@ -65,9 +64,8 @@ class AgentDDPG(Agent):
                                 action_low=self.env.action_low,
                                 action_high=self.env.action_high,
                                 )
-        self.critic_target = _CriticDDPG(state_space=self.env.shape_state[0],
-                                         action_space=self.env.shape_action[0],
-                                         hidden_size=hidden_layer_size,
+        self.critic_target = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0],
+                                         hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                          output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
@@ -76,7 +74,7 @@ class AgentDDPG(Agent):
                                          gradient_clip=critic_gradient_clip,
                                          )
         self.actor_target = _ActorDDPG(input_size=self.env.shape_state[0], 
-                                       hidden_size=hidden_layer_size,
+                                       hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                        output_size=self.env.shape_action[0],
                                        lr=actor_lr,
                                        optim_momentum=optim_momentum,
@@ -205,11 +203,11 @@ class _CriticDDPG(nn.Module, Critic):
 
     NOTE: batch norm in evaluation network decrease performance. 
     """
-    def __init__(self, state_space: int, action_space: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4, 
+    def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4, 
     loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6) -> None:
         super().__init__()
-        self.layer1 = nn.Linear(state_space+action_space, hidden_size)
-        nn.init.uniform_(self.layer1.weight, -math.sqrt(1/state_space), math.sqrt(1/state_space))
+        self.layer1 = nn.Linear(input_size, hidden_size)
+        nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size,), math.sqrt(1/input_size))
         self.layer2 = nn.Linear(hidden_size, hidden_size)
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
         self.layer3 = nn.Linear(hidden_size, output_size)
@@ -235,6 +233,14 @@ class _CriticDDPG(nn.Module, Critic):
     def validate(self) -> None:
         return
 
+
+def infer_size(n):
+    # return max(2^k, 16) where k is the largest integer that makes 2^k <= n
+    i = 1
+    while n > 1:
+        n >>= 1
+        i <<= 1
+    return max(i, 1<<3)
 
 """NOTE 1
 batch norm to reduce internal covariance shift, especially when previouos layer is nonlinear. 
