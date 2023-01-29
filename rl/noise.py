@@ -38,6 +38,7 @@ class EmptyNoise(Noise):
         return action
 
 
+# TODO: make exploration nosie more intelligent: decay in upward macro trend of reward and increase in downward trend. Also has lower and upper limit
 class OUNoise(Noise):
     """
     Ornstein-Ulhenbeck Process

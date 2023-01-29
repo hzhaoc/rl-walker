@@ -31,9 +31,8 @@ class TestHumannoidEnv(HumanoidEnv):
     @override(HumanoidEnv)
     def step(self, action):
         # TODO: customize reward function as one sees fit
-        # for total reward should we consider:
+        # should we also consider:
         #   - penalizing energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
-        #   - penalizing 
         # TODO: add contact_cost in cost function?
         return super().step(action)
 

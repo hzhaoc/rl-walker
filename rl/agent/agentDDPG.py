@@ -61,6 +61,8 @@ class AgentDDPG(Agent):
                                               theta=actor_noise_theta) if actor_noise_switch else EmptyNoise(),
                                 loss_weight_regularization_l2=actor_loss_weight_regularization_l2,
                                 gradient_clip=actor_gradient_clip,
+                                action_low=self.env.action_low,
+                                action_high=self.env.action_high,
                                 )
         self.critic_target = _CriticDDPG(state_space=self.env.shape_state[0],
                                          action_space=self.env.shape_action[0],
@@ -82,6 +84,8 @@ class AgentDDPG(Agent):
                                        bn_momentum=critic_bn_momentum,
                                        loss_weight_regularization_l2=actor_loss_weight_regularization_l2,
                                        gradient_clip=actor_gradient_clip,
+                                       action_low=self.env.action_low,
+                                       action_high=self.env.action_high,
                                        )
         for param, param_target in zip(self.actor.parameters(), self.actor_target.parameters()):
             param_target.data.copy_(param.data)
@@ -147,7 +151,8 @@ class AgentDDPG(Agent):
 
 class _ActorDDPG(nn.Module, Actor):
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3, 
-                       eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise(), loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6) -> None:
+                       eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise(), loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6,
+                       action_low: np.ndarray = np.array([]), action_high: np.ndarray = np.array([])) -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
@@ -162,13 +167,18 @@ class _ActorDDPG(nn.Module, Actor):
         self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
         self.gradient_clip = gradient_clip
         self.noise = noise
+        self.action_mid = torch.FloatTensor((action_low + action_high) / 2)
+        self.action_radius = torch.FloatTensor((action_high - action_low) / 2)
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
         x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
         x = relu(self.layer2bn(self.layer2(x)))
         x = tanh(self.layer3bn(self.layer3(x)))
-        return 0.4 * x  # TODO: generalize to actual scale
+        return self.actionScaler(x)
+    
+    def actionScaler(self, x: torch.Tensor) -> torch.Tensor:
+        return self.action_radius * x + self.action_mid
 
     @override(Actor)
     def act(self, state: torch.Tensor) -> np.ndarray:
