@@ -10,6 +10,7 @@ from gymnasium.envs.mujoco.ant_v4 import AntEnv
 from gymnasium.envs.mujoco.half_cheetah_v4 import HalfCheetahEnv
 from gymnasium.envs.mujoco.reacher_v4 import ReacherEnv
 from rl.util import *
+import numpy as np
 
 
 class TestHumannoidEnv(HumanoidEnv):
@@ -20,12 +21,12 @@ class TestHumannoidEnv(HumanoidEnv):
 
     def __init__(
         self, 
-        forward_reward_weight=1.25,
-        ctrl_cost_weight=0.1, 
+        forward_reward_weight=2.0,
+        ctrl_cost_weight=0.15, 
         healthy_reward=5, 
         terminate_when_unhealthy=True, 
-        healthy_z_range=(1.0, 2.0), 
-        reset_noise_scale=0.01, 
+        healthy_z_range=(0.6, 2.0), 
+        reset_noise_scale=0.1, 
         exclude_current_positions_from_observation=True, 
         **kwargs):
         super().__init__(
@@ -43,10 +44,38 @@ class TestHumannoidEnv(HumanoidEnv):
         # TODO: customize reward function as one sees fit
         # things to consider:
         #   - penalize energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
-        #   - penalize two-feet-in-the-air situation (it's walker not runner. hmm does not seem like a good reward component)
-        #   - normalize each reward component and assign wegiht to each component. this way, we can specify a reward function to more intentionally guide agent learning 
         #   - add contact_cost in cost function?
-        return super().step(action)
+        xy_position_before = mass_center(self.model, self.data)
+        self.do_simulation(action, self.frame_skip)
+        xy_position_after = mass_center(self.model, self.data)
+
+        xy_velocity = (xy_position_after - xy_position_before) / self.dt
+        x_velocity, y_velocity = xy_velocity
+
+        ctrl_cost = self.control_cost(action)
+        forward_reward = self._forward_reward_weight * x_velocity
+        healthy_reward = self.healthy_reward
+        observation = self._get_obs()
+        reward_stable_height = -(max(abs(observation[0] - 1.31) - 0.1, 0.0))**2 * 50
+        reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height
+        terminated = self.terminated
+
+        info = {
+            "rFwd": forward_reward,
+            "rCtrl": -ctrl_cost,
+            "rAlive": healthy_reward,
+            "rHeight": reward_stable_height,
+            "x_position": xy_position_after[0],
+            "y_position": xy_position_after[1],
+            "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
+            "x_velocity": x_velocity,
+            "y_velocity": y_velocity,
+            "forward_reward": forward_reward,
+        }
+
+        if self.render_mode == "human":
+            self.render()
+        return observation, reward, terminated, False, info
 
 
 class TestPendulumEnv(PendulumEnv):
@@ -179,3 +208,9 @@ class TestReacherEnv(ReacherEnv):
     @override(ReacherEnv)
     def step(self, action):
         return super().step(action)
+
+
+def mass_center(model, data):
+    mass = np.expand_dims(model.body_mass, axis=1)
+    xpos = data.xipos
+    return (np.sum(mass * xpos, axis=0) / np.sum(mass))[0:2].copy()
