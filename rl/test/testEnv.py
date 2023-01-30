@@ -11,6 +11,7 @@ from gymnasium.envs.mujoco.half_cheetah_v4 import HalfCheetahEnv
 from gymnasium.envs.mujoco.reacher_v4 import ReacherEnv
 from rl.util import *
 import numpy as np
+import math
 
 
 class TestHumannoidEnv(HumanoidEnv):
@@ -56,8 +57,9 @@ class TestHumannoidEnv(HumanoidEnv):
         forward_reward = self._forward_reward_weight * x_velocity
         healthy_reward = self.healthy_reward
         observation = self._get_obs()
-        reward_stable_height = -(max(abs(observation[0] - 1.31) - 0.1, 0.0))**2 * 50
-        reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height
+        reward_stable_height = -(observation[0] - 1.31)**2 * 10
+        reward_head_straight = -math.acos(observation[1])**2 * 10  # convert quaternion to eular angle
+        reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height + reward_head_straight
         terminated = self.terminated
 
         info = {
@@ -65,6 +67,7 @@ class TestHumannoidEnv(HumanoidEnv):
             "rCtrl": -ctrl_cost,
             "rAlive": healthy_reward,
             "rHeight": reward_stable_height,
+            "rHead": reward_head_straight,
             "x_position": xy_position_after[0],
             "y_position": xy_position_after[1],
             "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
