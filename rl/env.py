@@ -22,7 +22,7 @@ ENVS_GYMNASIUM = ["CartPole-v0", "CartPole-v1", "MountainCar-v0", "MountainCarCo
                 "HumanoidStandup-v2", "HumanoidStandup-v4",
                 "Humanoid-v2", "Humanoid-v3", "Humanoid-v4"]
 ENVS_TEST = ["TestHumannoidEnv", "TestPendulumEnv", "TestCartPoleEnv", "TestContinuous_MountainCarEnv", "TestCarRacing", "TestInvertedDoublePendulumEnv", "TestSwimmerEnv",
-             "TestHalfCheetahEnv", "TestAntEnv", "TestHopperEnv"]
+             "TestHalfCheetahEnv", "TestAntEnv", "TestHopperEnv", "TestHumanoidStandupEnv", "TestReacherEnv", "TestWalker2dEnv", "TestBipedalWalker", "TestBipedalWalkerHardcore",]
 
 
 class Env:
