@@ -21,7 +21,8 @@ ENVS_GYMNASIUM = ["CartPole-v0", "CartPole-v1", "MountainCar-v0", "MountainCarCo
                 "Ant-v2", "Ant-v3", "Ant-v4",
                 "HumanoidStandup-v2", "HumanoidStandup-v4",
                 "Humanoid-v2", "Humanoid-v3", "Humanoid-v4"]
-ENVS_TEST = ["TestHumannoidEnv", "TestPendulumEnv"]
+ENVS_TEST = ["TestHumannoidEnv", "TestPendulumEnv", "TestCartPoleEnv", "TestContinuous_MountainCarEnv", "TestCarRacing", "TestInvertedDoublePendulumEnv", "TestSwimmerEnv",
+             "TestHalfCheetahEnv", "TestAntEnv", "TestHopperEnv"]
 
 
 class Env:
@@ -95,8 +96,7 @@ class Env:
                 "Walker2d-v2", "Walker2d-v3", "Walker2d-v4",
                 "Ant-v2", "Ant-v3", "Ant-v4",
                 "HumanoidStandup-v2", "HumanoidStandup-v4",
-                "Humanoid-v2", "Humanoid-v3", "Humanoid-v4",
-                "TestHumannoidEnv"],
+                "Humanoid-v2", "Humanoid-v3", "Humanoid-v4"],
                 **kwargs) -> gym.Env: ...
 
     @staticmethod

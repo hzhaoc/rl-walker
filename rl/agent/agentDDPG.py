@@ -97,7 +97,6 @@ class AgentDDPG(Agent):
 
     @override(Agent)
     def act(self, state: np.ndarray) -> np.ndarray:
-        # TODO: normalize input?
         return self.actor.act(torch.FloatTensor(state).reshape(1, -1))
 
     @override(Agent)
@@ -114,7 +113,6 @@ class AgentDDPG(Agent):
         note:
         - update value approximator before policy approximator
         """
-        # TODO: normalize input?
         if len(self.buf) <= self.buf.batch_size:
             return
         s0, a0, r0, s1, _ = self.buf.sample()   # samples in batch
@@ -156,10 +154,9 @@ class _ActorDDPG(nn.Module, Actor):
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
         self.layer2 = nn.Linear(hidden_size, hidden_size)
-        self.layer2bn = nn.BatchNorm1d(num_features=hidden_size, eps=eps, momentum=bn_momentum)  # NOTE 1
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
         self.layer3 = nn.Linear(hidden_size, output_size)
-        self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)
+        self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)  # NOTE 1
         nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
     
         #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
@@ -172,7 +169,7 @@ class _ActorDDPG(nn.Module, Actor):
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
         x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
-        x = relu(self.layer2bn(self.layer2(x)))
+        x = relu(self.layer2(x))
         x = tanh(self.layer3bn(self.layer3(x)))
         return self.actionScaler(x)
     
