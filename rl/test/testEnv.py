@@ -60,8 +60,8 @@ class TestHumannoidEnv(HumanoidEnv):
         healthy_reward = self.healthy_reward
         observation = self._get_obs()
         reward_stable_height = -(observation[0] - 1.31)**2 * 10
-        reward_head_straight = -math.acos(observation[1])**2 * 10  # convert quaternion to eular angle
-        reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height + reward_head_straight
+        #reward_head_straight = -math.acos(observation[1])**2 * 10  # convert quaternion to eular angle
+        reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height# + reward_head_straight
         terminated = self.terminated
 
         info = {
@@ -69,7 +69,7 @@ class TestHumannoidEnv(HumanoidEnv):
             "rCtrl": -ctrl_cost,
             "rAlive": healthy_reward,
             "rHeight": reward_stable_height,
-            "rHead": reward_head_straight,
+            #"rHead": reward_head_straight,
             "x_position": xy_position_after[0],
             "y_position": xy_position_after[1],
             "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
