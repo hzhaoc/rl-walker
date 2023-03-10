@@ -18,25 +18,18 @@ PARAMS_MAX = 1e8
 
 
 # TODO: a Param class to contain all hyper parameters
-class AgentDDPG(Agent):
+class AgentTD3(Agent):
     """
-    Deep Deterministic Policy Gradient agent
-    original idea: CONTINUOUS CONTROL WITH DEEP REINFORCEMENT LEARNING, 2016, Timothy P. Lillicrap et al
-    
-    - state-action value
-        - follows Bellman Optimality Equation: $q(s,a)=\sum_{s',r}\rho(s',r|s,a)(r+\gamma\max_{a'}q(s',a')))$
-        - value is approximated by a non-linear approximator - neural network that inputs action and state, and outputs expected value.
-    - policy
-        - policy takes state and gives a determinsitic action which it expects to yield highest value
-        - the policy is approximated by a different neural network that inputs state, and outputs expected optimal action.
+    Twin-Delayed Deep Deterministic Policy Gradient agent
+    theory: CAddressing Function Approximation Error in Actor-Critic Methods, Scott Fujimoto et al
     """
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1,
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
                        actor_noise_switch=False, actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
-                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6) -> None:
+                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6, update_delay=100) -> None:
         super().__init__()
         self.env = env
-        self.critic = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0],
+        self.critic1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                   output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
                                   lr=critic_lr,
@@ -45,7 +38,16 @@ class AgentDDPG(Agent):
                                   loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                   gradient_clip=critic_gradient_clip,
                                   )
-        self.actor = _ActorDDPG(input_size=self.env.shape_state[0], 
+        self.critic2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
+                                  hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
+                                  output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                  lr=critic_lr,
+                                  optim_momentum=optim_momentum,
+                                  last_layer_weight_init=critic_last_layer_weight_init,
+                                  loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
+                                  gradient_clip=critic_gradient_clip,
+                                  )
+        self.actor = ActorTD3(input_size=self.env.shape_state[0], 
                                 hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                 output_size=self.env.shape_action[0],
                                 lr=actor_lr,
@@ -64,7 +66,7 @@ class AgentDDPG(Agent):
                                 action_low=self.env.action_low,
                                 action_high=self.env.action_high,
                                 )
-        self.critic_target = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0],
+        self.critic_target1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                          output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
                                          lr=critic_lr,
@@ -73,7 +75,16 @@ class AgentDDPG(Agent):
                                          loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                          gradient_clip=critic_gradient_clip,
                                          )
-        self.actor_target = _ActorDDPG(input_size=self.env.shape_state[0], 
+        self.critic_target2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
+                                         hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
+                                         output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                         lr=critic_lr,
+                                         optim_momentum=optim_momentum,
+                                         last_layer_weight_init=critic_last_layer_weight_init,
+                                         loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
+                                         gradient_clip=critic_gradient_clip,
+                                         )
+        self.actor_target = ActorTD3(input_size=self.env.shape_state[0], 
                                        hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                        output_size=self.env.shape_action[0],
                                        lr=actor_lr,
@@ -88,12 +99,16 @@ class AgentDDPG(Agent):
                                        )
         for param, param_target in zip(self.actor.parameters(), self.actor_target.parameters()):
             param_target.data.copy_(param.data)
-        for param, param_target in zip(self.critic.parameters(), self.critic_target.parameters()):
+        for param, param_target in zip(self.critic1.parameters(), self.critic_target1.parameters()):
             param_target.data.copy_(param.data)
-        self.tau = tau   # target network update rate
-        self.gamma = gamma  # future reward discount rate
+        for param, param_target in zip(self.critic2.parameters(), self.critic_target2.parameters()):
+            param_target.data.copy_(param.data)
 
+        self.tau = tau   # function parameter update rate
+        self.gamma = gamma  # value discount rate
         self.buf = Buffer(bufsize, exp_sample_size)
+        self.t = 0
+        self.update_delay = update_delay
 
     @override(Agent)
     def act(self, state: np.ndarray) -> np.ndarray:
@@ -101,18 +116,7 @@ class AgentDDPG(Agent):
 
     @override(Agent)
     def update(self) -> None:
-        """
-        update value function and policy
-
-        state-action value function
-        - objective is to minimize cost; use gradient update for weights
-
-        policy
-        - objective is to maximize reward; use gradient update for weights
-
-        note:
-        - update value approximator before policy approximator
-        """
+        self.t += 1
         if len(self.buf) <= self.buf.batch_size:
             return
         s0, a0, r0, s1, _ = self.buf.sample()   # samples in batch
@@ -121,23 +125,34 @@ class AgentDDPG(Agent):
         r0 = torch.FloatTensor(r0)
         s1 = torch.FloatTensor(s1)
         # update online critic
-        self.critic.optimizer.zero_grad()
-        q_modeled = self.critic.forward(s0, a0)
-        q_true_biased = r0 + self.gamma * self.critic_target.forward(s1, self.actor_target.forward(s1))
-        critic_loss = self.critic.criterion(q_modeled, q_true_biased.detach())  # target network is deteched from gradient descent
+        q_modeled1, q_modeled2 = self.critic1.forward(s0, a0), self.critic2.forward(s0, a0)
+        a1 = self.actor_target.forward(s1)
+        q_target1, q_target2 = self.critic_target1.forward(s1, a1), self.critic_target2.forward(s1, a1)
+        q_true_biased = r0 + self.gamma * torch.min(q_target1, q_target2)
+
+        self.critic1.optimizer.zero_grad()
+        self.critic2.optimizer.zero_grad()
+        critic_loss = self.critic1.criterion(q_modeled1, q_true_biased.detach()) + self.critic2.criterion(q_modeled2, q_true_biased.detach())
         critic_loss.backward()
-        nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), max_norm=self.critic.gradient_clip)
-        self.critic.optimizer.step()
+        nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
+        nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
+        self.critic1.optimizer.step()
+        self.critic2.optimizer.step()
+
+        if (self.t % self.update_delay):  # delay update
+            return
         # update online actor
         self.actor.optimizer.zero_grad()
-        actor_loss = -1 * self.critic.forward(s0, self.actor.forward(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
+        actor_loss = -1 * self.critic1.forward(s0, self.actor.forward(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
         actor_loss.backward()
         nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
         self.actor.optimizer.step()
-        # update offline (target) critic & actor
+        # update offline (target) critics & actor
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
-        for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
+        for target_param, param in zip(self.critic_target1.parameters(), self.critic1.parameters()):
+            target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
+        for target_param, param in zip(self.critic_target2.parameters(), self.critic2.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
 
     @override(Agent)
@@ -146,7 +161,8 @@ class AgentDDPG(Agent):
         self.actor.noise.reset()
 
 
-class _ActorDDPG(nn.Module, Actor):
+class ActorTD3(nn.Module, Actor):
+    """neural netowrk polixy approximator: f(s) -> a"""
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3, 
                        eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise(), loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6,
                        action_low: np.ndarray = np.array([]), action_high: np.ndarray = np.array([])) -> None:
@@ -193,12 +209,9 @@ class _ActorDDPG(nn.Module, Actor):
         return
 
 
-class _CriticDDPG(nn.Module, Critic):
+class CriticTD3(nn.Module, Critic):
     """
-    a non-linear approximator modeled as fully-connected neural networkthat that evaluates given action and state
-    inputs action + state vector, outputs a scalar value
-
-    NOTE: batch norm in evaluation network decrease performance. 
+    neural-network value approximator: g(s, a) -> value
     """
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4, 
     loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6) -> None:
@@ -238,10 +251,3 @@ def infer_size(n):
         n >>= 1
         i <<= 1
     return max(i, 1<<3)
-
-"""NOTE 1
-batch norm to reduce internal covariance shift, especially when previouos layer is nonlinear. 
-@see Batch Norm 2015 Paper. 
-`eps` for stability of scaler post unit normalization
-`momentum` for running population mean and variance. If set to None, all seen batches will be used to calcualte mean and variance
-"""
