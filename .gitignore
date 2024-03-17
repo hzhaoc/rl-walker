@@ -4,3 +4,4 @@ rewards*.txt
 /play
 /rl/example
 MUJOCO_LOG.TXT
+models

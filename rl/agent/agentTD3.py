@@ -11,27 +11,28 @@ import torch.optim as optim
 from rl.buffer import Buffer
 import math
 from rl.noise import *
+from pathlib import Path
     
 
 PARAMS_MIN = -1e8
 PARAMS_MAX = 1e8
 
 
-# TODO: a Param class to contain all hyper parameters
 class AgentTD3(Agent):
     """
     Twin-Delayed Deep Deterministic Policy Gradient agent
-    theory: CAddressing Function Approximation Error in Actor-Critic Methods, Scott Fujimoto et al
+    theory: Addressing Function Approximation Error in Actor-Critic Methods, Scott Fujimoto et al
     """
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1,
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
                        actor_noise_switch=False, actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
-                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6, update_delay=100) -> None:
+                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6, update_delay=100, policy_noise = 0.2, noise_clip = 0.5) -> None:
         super().__init__()
         self.env = env
+        # print(env.shape_action, env.shape_state)
         self.critic1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                  output_size=self.env.shape_action[0],
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
@@ -40,14 +41,14 @@ class AgentTD3(Agent):
                                   )
         self.critic2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                  output_size=self.env.shape_action[0],
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
                                   loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                   gradient_clip=critic_gradient_clip,
                                   )
-        self.actor = ActorTD3(input_size=self.env.shape_state[0], 
+        self.actor = ActorTD3(input_size=self.env.shape_state[0],
                                 hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
                                 output_size=self.env.shape_action[0],
                                 lr=actor_lr,
@@ -55,11 +56,11 @@ class AgentTD3(Agent):
                                 last_layer_weight_init=actor_loss_weight_regularization_l2,
                                 eps=critic_bn_eps,
                                 bn_momentum=critic_bn_momentum,
-                                noise=OUNoise(action_dim=self.env.shape_action[0], 
-                                              low=self.env.action_low, 
-                                              high=self.env.action_high, 
-                                              min_sigma=actor_noise_sigma, 
-                                              max_sigma=actor_noise_sigma, 
+                                noise=OUNoise(action_dim=self.env.shape_action[0],
+                                              low=self.env.action_low,
+                                              high=self.env.action_high,
+                                              min_sigma=actor_noise_sigma,
+                                              max_sigma=actor_noise_sigma,
                                               theta=actor_noise_theta) if actor_noise_switch else EmptyNoise(),
                                 loss_weight_regularization_l2=actor_loss_weight_regularization_l2,
                                 gradient_clip=actor_gradient_clip,
@@ -68,7 +69,7 @@ class AgentTD3(Agent):
                                 )
         self.critic_target1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                         output_size=self.env.shape_action[0],
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
@@ -77,7 +78,7 @@ class AgentTD3(Agent):
                                          )
         self.critic_target2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                         output_size=self.env.shape_action[0],
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
@@ -109,45 +110,68 @@ class AgentTD3(Agent):
         self.buf = Buffer(bufsize, exp_sample_size)
         self.t = 0
         self.update_delay = update_delay
+        self.noise_clip = policy_noise
+        self.policy_noise = noise_clip
+        
+        self.train_action_low = torch.FloatTensor(np.array(self.env.action_low).reshape(1, -1).repeat(exp_sample_size, axis=0))  # affected by buf size
+        self.train_action_high = torch.FloatTensor(np.array(self.env.action_high).reshape(1, -1).repeat(exp_sample_size, axis=0))  # affected by buf size
 
     @override(Agent)
     def act(self, state: np.ndarray) -> np.ndarray:
-        return self.actor.act(torch.FloatTensor(state).reshape(1, -1))
+        return self.actor.act(torch.FloatTensor(state).reshape(1, -1))  # input shape for act(): [1, 3]
 
     @override(Agent)
     def update(self) -> None:
         self.t += 1
         if len(self.buf) <= self.buf.batch_size:
             return
-        s0, a0, r0, s1, _ = self.buf.sample()   # samples in batch
-        s0 = torch.FloatTensor(s0)
+        s0, a0, r0, s1, done = self.buf.sample()   # samples in batch
+        s0 = torch.FloatTensor(s0)  # shape is (sample size, state space)
         a0 = torch.FloatTensor(a0)
         r0 = torch.FloatTensor(r0)
         s1 = torch.FloatTensor(s1)
-        # update online critic
-        q_modeled1, q_modeled2 = self.critic1.forward(s0, a0), self.critic2.forward(s0, a0)
-        a1 = self.actor_target.forward(s1)
-        q_target1, q_target2 = self.critic_target1.forward(s1, a1), self.critic_target2.forward(s1, a1)
-        q_true_biased = r0 + self.gamma * torch.min(q_target1, q_target2)
+        done = torch.FloatTensor(done).reshape(-1, 1) # shape is (sample size, 1)
 
+        # 1. update online critics
+        #   does critic need to be set at eval mode before forward? No. Critic does not have dropout or batchnorm. only these 2 are affected by eval/train
+        #   freezes online critic while updating online actor
+        with torch.no_grad():  # q_true_biased has no gradient so it does not propogate to target network during online updating
+            noise = torch.FloatTensor(a0.shape).data.normal_(0, self.policy_noise)
+            noise = noise.clamp(-self.noise_clip, self.noise_clip)
+            a1 = self.actor_target(s1)
+            a1 = (a1 + noise).clamp(self.train_action_low, self.train_action_high)
+
+            q_target1, q_target2 = self.critic_target1(s1, a1), self.critic_target2(s1, a1)
+            q_true_biased = r0 + (1-done) * self.gamma * torch.min(q_target1, q_target2)
+
+        q_modeled1 = self.critic1(s0, a0)
+        critic_loss = self.critic1.criterion(q_modeled1, q_true_biased)
         self.critic1.optimizer.zero_grad()
-        self.critic2.optimizer.zero_grad()
-        critic_loss = self.critic1.criterion(q_modeled1, q_true_biased.detach()) + self.critic2.criterion(q_modeled2, q_true_biased.detach())
         critic_loss.backward()
-        nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
-        nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
         self.critic1.optimizer.step()
-        self.critic2.optimizer.step()
+        nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
 
+        q_modeled2 = self.critic2(s0, a0)
+        critic_loss = self.critic2.criterion(q_modeled2, q_true_biased)
+        self.critic2.optimizer.zero_grad()
+        critic_loss.backward()
+        self.critic2.optimizer.step()
+        nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
+    
+        # 2. update online actor
         if (self.t % self.update_delay):  # delay update
             return
-        # update online actor
+        for params in self.critic1.parameters():
+            params.requires_grad = False
+        actor_loss = -1 * self.critic1(s0, self.actor(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor(s0)`
         self.actor.optimizer.zero_grad()
-        actor_loss = -1 * self.critic1.forward(s0, self.actor.forward(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
         actor_loss.backward()
-        nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
         self.actor.optimizer.step()
-        # update offline (target) critics & actor
+        nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
+        for params in self.critic1.parameters():
+            params.requires_grad = True
+
+        # 3. update offline critics & actor
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
         for target_param, param in zip(self.critic_target1.parameters(), self.critic1.parameters()):
@@ -159,6 +183,23 @@ class AgentTD3(Agent):
     def reset(self) -> None:
         """reset anythigng if it makes sense"""
         self.actor.noise.reset()
+
+    def save(self, directory) -> None:
+        Path(directory).mkdir(parents=True, exist_ok=True)
+        for attrname in ('actor', 'actor_target', 'critic1', 'critic_target1', 'critic2', 'critic_target2'):
+            attr = getattr(self, attrname)
+            fpath = '%s/%s.pth' % (directory, attrname)
+            torch.save(attr.state_dict(), fpath)
+
+    def load(self, modelDir=None):
+        if not modelDir:
+            return
+        lam = lambda storage, loc: storage
+        for attrname in ('actor', 'actor_target', 'critic1', 'critic_target1', 'critic2', 'critic_target2'):
+            attr = getattr(self, attrname)
+            fpath = '%s/%s.pth' % (modelDir, attrname)
+            state_dict = torch.load(fpath, map_location=lam)
+            attr.load_state_dict(state_dict)
 
 
 class ActorTD3(nn.Module, Actor):
@@ -181,6 +222,7 @@ class ActorTD3(nn.Module, Actor):
         self.noise = noise
         self.action_mid = torch.FloatTensor((action_low + action_high) / 2)
         self.action_radius = torch.FloatTensor((action_high - action_low) / 2)
+        self.output_size = output_size
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
@@ -194,10 +236,16 @@ class ActorTD3(nn.Module, Actor):
 
     @override(Actor)
     def act(self, state: torch.Tensor) -> np.ndarray:
-        self.eval()
-        action = self.forward(state).detach().numpy().flatten()
+        self.eval()   # set it at eval mode. affects only batchnorm, dropout, etc
+        # print(self.forward(state).detach().numpy().shape, self.forward(state).detach().numpy().flatten().shape)
+        with torch.no_grad():
+            action = self.forward(state).detach().numpy().flatten()
         action = self.noise.get_action(action)
-        self.train()  # back to default mode
+        self.train()  # set it back to default mode
+        return action
+
+    def _act(self, state: torch.Tensor) -> torch.Tensor:
+        action = torch.FloatTensor(self.act(state)).reshape(-1, self.output_size)
         return action
 
     @override(Actor)
@@ -246,8 +294,9 @@ class CriticTD3(nn.Module, Critic):
 
 def infer_size(n):
     # return max(2^k, 16) where k is the largest integer that makes 2^k <= n
+    # minimum 256
     i = 1
     while n > 1:
         n >>= 1
         i <<= 1
-    return max(i, 1<<3)
+    return max(i, 256)

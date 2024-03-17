@@ -17,7 +17,6 @@ PARAMS_MIN = -1e8
 PARAMS_MAX = 1e8
 
 
-# TODO: a Param class to contain all hyper parameters
 class AgentDDPG(Agent):
     """
     Deep Deterministic Policy Gradient agent
@@ -33,12 +32,13 @@ class AgentDDPG(Agent):
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1,
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
                        actor_noise_switch=False, actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
-                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6) -> None:
+                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6, update_delay=1.0, 
+                       policy_noise=0.2, noise_clip=0.5) -> None:
         super().__init__()
         self.env = env
         self.critic = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                  output_size=self.env.shape_action[0],
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
@@ -66,7 +66,7 @@ class AgentDDPG(Agent):
                                 )
         self.critic_target = _CriticDDPG(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=self.env.shape_action[0],  # TODO: output size = action# or 1?
+                                         output_size=self.env.shape_action[0],
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
@@ -94,6 +94,11 @@ class AgentDDPG(Agent):
         self.gamma = gamma  # future reward discount rate
 
         self.buf = Buffer(bufsize, exp_sample_size)
+        self.noise_clip = policy_noise
+        self.policy_noise = noise_clip
+        
+        self.train_action_low = torch.FloatTensor(np.array(self.env.action_low).reshape(1, -1).repeat(exp_sample_size, axis=0))  # affected by buf size
+        self.train_action_high = torch.FloatTensor(np.array(self.env.action_high).reshape(1, -1).repeat(exp_sample_size, axis=0))  # affected by buf size
 
     @override(Agent)
     def act(self, state: np.ndarray) -> np.ndarray:
@@ -115,26 +120,40 @@ class AgentDDPG(Agent):
         """
         if len(self.buf) <= self.buf.batch_size:
             return
-        s0, a0, r0, s1, _ = self.buf.sample()   # samples in batch
-        s0 = torch.FloatTensor(s0)
+        s0, a0, r0, s1, done = self.buf.sample()   # samples in batch
+        s0 = torch.FloatTensor(s0)  # shape is (sample size, state space)
         a0 = torch.FloatTensor(a0)
         r0 = torch.FloatTensor(r0)
         s1 = torch.FloatTensor(s1)
-        # update online critic
+        done = torch.FloatTensor(done).reshape(-1, 1) # shape is (sample size, 1)
+
+        # 1. update online critic
+        with torch.no_grad():  # q_true_biased has no gradient so it does not propogate to target network during online updating
+            noise = torch.FloatTensor(a0.shape).data.normal_(0, self.policy_noise)
+            noise = noise.clamp(-self.noise_clip, self.noise_clip)
+            a1 = self.actor_target(s1)
+            a1 = (a1 + noise).clamp(self.train_action_low, self.train_action_high)
+            q_true_biased = r0 + (1-done) * self.gamma * self.critic_target(s1, a1)
+
+        q_modeled = self.critic(s0, a0)
+        critic_loss = self.critic.criterion(q_modeled, q_true_biased)  # target network is detached from gradient descent
         self.critic.optimizer.zero_grad()
-        q_modeled = self.critic.forward(s0, a0)
-        q_true_biased = r0 + self.gamma * self.critic_target.forward(s1, self.actor_target.forward(s1))
-        critic_loss = self.critic.criterion(q_modeled, q_true_biased.detach())  # target network is deteched from gradient descent
         critic_loss.backward()
-        nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), max_norm=self.critic.gradient_clip)
         self.critic.optimizer.step()
-        # update online actor
+        nn.utils.clip_grad.clip_grad_norm_(self.critic.parameters(), max_norm=self.critic.gradient_clip)
+        # 2. update online actor
+        #   does critic need to be set at eval mode before forward? No. Critic does not have dropout or batchnorm. only these 2 are affected by eval/train
+        #   note we need to freeze online critic while updating online actor
+        for params in self.critic.parameters():
+            params.requires_grad = False
+        actor_loss = -1 * self.critic(s0, self.actor(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
         self.actor.optimizer.zero_grad()
-        actor_loss = -1 * self.critic.forward(s0, self.actor.forward(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor.forward(s0)`
         actor_loss.backward()
-        nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
         self.actor.optimizer.step()
-        # update offline (target) critic & actor
+        nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
+        for params in self.critic.parameters():
+            params.requires_grad = True
+        # 3. update offline (target) critic & actor
         for target_param, param in zip(self.actor_target.parameters(), self.actor.parameters()):
             target_param.data.copy_(param.data * self.tau + target_param.data * (1.0 - self.tau))
         for target_param, param in zip(self.critic_target.parameters(), self.critic.parameters()):
@@ -142,7 +161,6 @@ class AgentDDPG(Agent):
 
     @override(Agent)
     def reset(self) -> None:
-        """reset anythigng if it makes sense"""
         self.actor.noise.reset()
 
 
@@ -165,10 +183,11 @@ class _ActorDDPG(nn.Module, Actor):
         self.noise = noise
         self.action_mid = torch.FloatTensor((action_low + action_high) / 2)
         self.action_radius = torch.FloatTensor((action_high - action_low) / 2)
-        
+        self.output_size = output_size
+
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
-        x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
+        x = relu(self.layer1(x))  # ways to alleviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
         x = relu(self.layer2(x))
         x = tanh(self.layer3bn(self.layer3(x)))
         return self.actionScaler(x)
@@ -178,10 +197,16 @@ class _ActorDDPG(nn.Module, Actor):
 
     @override(Actor)
     def act(self, state: torch.Tensor) -> np.ndarray:
-        self.eval()
-        action = self.forward(state).detach().numpy().flatten()
+        self.eval()   # set it at eval mode. affects only batchnorm, dropout, etc
+        # print(self.forward(state).detach().numpy().shape())
+        with torch.no_grad():
+            action = self.forward(state).detach().numpy().flatten()
         action = self.noise.get_action(action)
-        self.train()  # back to default mode
+        self.train()  # set it back to default mode
+        return action
+
+    def _act(self, state: torch.Tensor) -> torch.Tensor:
+        action = torch.FloatTensor(self.act(state)).reshape(-1, self.output_size)
         return action
 
     @override(Actor)

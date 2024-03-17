@@ -42,45 +42,45 @@ class TestHumannoidEnv(HumanoidEnv):
             exclude_current_positions_from_observation, 
             **kwargs)
 
-    @override(HumanoidEnv)
-    def step(self, action):
-        # TODO: customize reward function as one sees fit
-        # things to consider:
-        #   - penalize energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
-        #   - add contact_cost in cost function?
-        xy_position_before = mass_center(self.model, self.data)
-        self.do_simulation(action, self.frame_skip)
-        xy_position_after = mass_center(self.model, self.data)
+    # @override(HumanoidEnv)
+    # def step(self, action):
+    #     # TODO: customize reward function as one sees fit
+    #     # things to consider:
+    #     #   - penalize energy / force differences spent on two legs (together with total force penalization to try to result in efficient walks)
+    #     #   - add contact_cost in cost function?
+    #     xy_position_before = mass_center(self.model, self.data)
+    #     self.do_simulation(action, self.frame_skip)
+    #     xy_position_after = mass_center(self.model, self.data)
 
-        xy_velocity = (xy_position_after - xy_position_before) / self.dt
-        x_velocity, y_velocity = xy_velocity
+    #     xy_velocity = (xy_position_after - xy_position_before) / self.dt
+    #     x_velocity, y_velocity = xy_velocity
 
-        ctrl_cost = self.control_cost(action)
-        forward_reward = self._forward_reward_weight * x_velocity
-        healthy_reward = self.healthy_reward
-        observation = self._get_obs()
-        reward_stable_height = -(observation[0] - 1.31)**2 * 10
-        #reward_head_straight = -math.acos(observation[1])**2 * 10  # convert quaternion to eular angle
-        reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height# + reward_head_straight
-        terminated = self.terminated
+    #     ctrl_cost = self.control_cost(action)
+    #     forward_reward = self._forward_reward_weight * x_velocity
+    #     healthy_reward = self.healthy_reward
+    #     observation = self._get_obs()
+    #     reward_stable_height = -(observation[0] - 1.31)**2 * 10
+    #     #reward_head_straight = -math.acos(observation[1])**2 * 10  # convert quaternion to eular angle
+    #     reward = forward_reward + healthy_reward - ctrl_cost + reward_stable_height# + reward_head_straight
+    #     terminated = self.terminated
 
-        info = {
-            "rFwd": forward_reward,
-            "rCtrl": -ctrl_cost,
-            "rAlive": healthy_reward,
-            "rHeight": reward_stable_height,
-            #"rHead": reward_head_straight,
-            "x_position": xy_position_after[0],
-            "y_position": xy_position_after[1],
-            "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
-            "x_velocity": x_velocity,
-            "y_velocity": y_velocity,
-            "forward_reward": forward_reward,
-        }
+    #     info = {
+    #         "rFwd": forward_reward,
+    #         "rCtrl": -ctrl_cost,
+    #         "rAlive": healthy_reward,
+    #         "rHeight": reward_stable_height,
+    #         #"rHead": reward_head_straight,
+    #         "x_position": xy_position_after[0],
+    #         "y_position": xy_position_after[1],
+    #         "distance_from_origin": np.linalg.norm(xy_position_after, ord=2),
+    #         "x_velocity": x_velocity,
+    #         "y_velocity": y_velocity,
+    #         "forward_reward": forward_reward,
+    #     }
 
-        if self.render_mode == "human":
-            self.render()
-        return observation, reward, terminated, False, info
+    #     if self.render_mode == "human":
+    #         self.render()
+    #     return observation, reward, terminated, False, info
 
 def mass_center(model, data):
     mass = np.expand_dims(model.body_mass, axis=1)
@@ -267,98 +267,11 @@ class TestBipedalWalker(BipedalWalker):
             **kwargs)
 
     @override(BipedalWalker)
-    def step(self, action):
-        assert self.hull is not None
-
-        # self.hull.ApplyForceToCenter((0, 20), True) -- Uncomment this to receive a bit of stability help
-        control_speed = False  # Should be easier as well
-        if control_speed:
-            self.joints[0].motorSpeed = float(SPEED_HIP * np.clip(action[0], -1, 1))
-            self.joints[1].motorSpeed = float(SPEED_KNEE * np.clip(action[1], -1, 1))
-            self.joints[2].motorSpeed = float(SPEED_HIP * np.clip(action[2], -1, 1))
-            self.joints[3].motorSpeed = float(SPEED_KNEE * np.clip(action[3], -1, 1))
-        else:
-            self.joints[0].motorSpeed = float(SPEED_HIP * np.sign(action[0]))
-            self.joints[0].maxMotorTorque = float(
-                MOTORS_TORQUE * np.clip(np.abs(action[0]), 0, 1)
-            )
-            self.joints[1].motorSpeed = float(SPEED_KNEE * np.sign(action[1]))
-            self.joints[1].maxMotorTorque = float(
-                MOTORS_TORQUE * np.clip(np.abs(action[1]), 0, 1)
-            )
-            self.joints[2].motorSpeed = float(SPEED_HIP * np.sign(action[2]))
-            self.joints[2].maxMotorTorque = float(
-                MOTORS_TORQUE * np.clip(np.abs(action[2]), 0, 1)
-            )
-            self.joints[3].motorSpeed = float(SPEED_KNEE * np.sign(action[3]))
-            self.joints[3].maxMotorTorque = float(
-                MOTORS_TORQUE * np.clip(np.abs(action[3]), 0, 1)
-            )
-
-        self.world.Step(1.0 / FPS, 6 * 30, 2 * 30)
-
-        pos = self.hull.position
-        vel = self.hull.linearVelocity
-
-        for i in range(10):
-            self.lidar[i].fraction = 1.0
-            self.lidar[i].p1 = pos
-            self.lidar[i].p2 = (
-                pos[0] + math.sin(1.5 * i / 10.0) * LIDAR_RANGE,
-                pos[1] - math.cos(1.5 * i / 10.0) * LIDAR_RANGE,
-            )
-            self.world.RayCast(self.lidar[i], self.lidar[i].p1, self.lidar[i].p2)
-
-        state = [
-            self.hull.angle,  # Normal angles up to 0.5 here, but sure more is possible.
-            2.0 * self.hull.angularVelocity / FPS,
-            0.3 * vel.x * (VIEWPORT_W / SCALE) / FPS,  # Normalized to get -1..1 range
-            0.3 * vel.y * (VIEWPORT_H / SCALE) / FPS,
-            self.joints[0].angle,
-            # This will give 1.1 on high up, but it's still OK (and there should be spikes on hiting the ground, that's normal too)
-            self.joints[0].speed / SPEED_HIP,
-            self.joints[1].angle + 1.0,
-            self.joints[1].speed / SPEED_KNEE,
-            1.0 if self.legs[1].ground_contact else 0.0,
-            self.joints[2].angle,
-            self.joints[2].speed / SPEED_HIP,
-            self.joints[3].angle + 1.0,
-            self.joints[3].speed / SPEED_KNEE,
-            1.0 if self.legs[3].ground_contact else 0.0,
-        ]
-        state += [l.fraction for l in self.lidar]
-        assert len(state) == 24
-
-        self.scroll = pos.x - VIEWPORT_W / SCALE / 5
-
-        shaping = (
-            130 * pos[0] / SCALE
-        )  # moving forward is a way to receive reward (normalized to get 300 on completion)
-        shaping -= 50.0 * abs(
-            state[0]
-        )  # keep head straight, other than that and falling, any behavior is unpunished
-
-        reward = 0
-        if self.prev_shaping is not None:
-            reward = shaping - self.prev_shaping
-        self.prev_shaping = shaping
-
-        for a in action:
-            reward -= 0.00035 * MOTORS_TORQUE * np.clip(np.abs(a), 0, 1)
-            # normalized to about -50.0 using heuristic, more optimal agent should spend less
-
-        terminated = False
-        if self.game_over or pos[0] < 0:
-            reward = -100
-            terminated = True
-        if pos[0] > (TERRAIN_LENGTH - TERRAIN_GRASS) * TERRAIN_STEP:
-            terminated = True
-
-        if self.render_mode == "human":
-            self.render()
-
-        reward += -max(abs(pos.y - HULL_INIT_POS_Y) - 1.0, 0.0)**2 * 50  # head height maintains same level
-        return np.array(state, dtype=np.float32), reward, terminated, False, {}
+    def step(self, action: np.ndarray):
+        s, r, done, truncated, info = super().step(action)
+        if self.game_over or self.hull.position[0] < 0:
+            r = -1  # modified reward. original is -100
+        return s, r, done, truncated, info
 
 
 class TestBipedalWalkerHardcore(BipedalWalkerHardcore):
