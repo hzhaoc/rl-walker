@@ -270,7 +270,7 @@ class TestBipedalWalker(BipedalWalker):
     def step(self, action: np.ndarray):
         s, r, done, truncated, info = super().step(action)
         if self.game_over or self.hull.position[0] < 0:
-            r = -1  # modified reward. original is -100
+            r = -100  # modified reward. original is -100
         return s, r, done, truncated, info
 
 

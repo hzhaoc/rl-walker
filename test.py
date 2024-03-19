@@ -9,8 +9,8 @@ from params import params, EnvNames
 envi = 121
 # agentClass = AgentDDPG
 agentClass = AgentTD3
-version = 5
-startEpisode = 0
+version = 7
+startEpisode = 400
 
 torch.autograd.set_detect_anomaly(mode=False, check_nan=True)
 env = Env.make(name=EnvNames[envi], render_mode="human")

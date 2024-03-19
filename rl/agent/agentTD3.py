@@ -293,10 +293,10 @@ class CriticTD3(nn.Module, Critic):
 
 
 def infer_size(n):
-    # return max(2^k, 16) where k is the largest integer that makes 2^k <= n
-    # minimum 256
     i = 1
     while n > 1:
         n >>= 1
         i <<= 1
+    i <<= 1
+    i <<= 1
     return max(i, 256)

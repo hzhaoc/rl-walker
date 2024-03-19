@@ -1,6 +1,15 @@
 # TODO: compare our TD3 to others'
-# TD3_4: hidden size = 256. done reward = -100
-# TD3_5: hidden size = 256. done reward = -1
+# TD3_4: hidden size = 256. done reward = -1
+# TD3_5: hidden size = 256. done reward = -50
+# TD3_6: hidden size = 256. done reward = -100
+# TD3_7: hidden size = 16.  done reward = -100
+
+
+# conclusions:
+# done reward decrease -> result improve. v4,v5,v6
+# hiddren size increase -> result improve. v6,v7
+
+
 
 #  TODO: try different agents:
 #       - A3C: did well on leg balancing

@@ -9,7 +9,7 @@ d = \
         "critic_loss_weight_regularization_l2": 0.0,
         "critic_gradient_clip": 1e6, # smaller cap prevents overfitting
         "actor_noise_switch": True,
-        "actor_noise_sigma" :0.1,  # try bigger ones
+        "actor_noise_sigma" :0.1,  # TEST bigger ones
         "actor_noise_theta": 0.05,
         "policy_noise": 0.2,
         "noise_clip": 0.5,
@@ -27,12 +27,9 @@ d = \
         "actor_loss_weight_regularization_l2": 0.0,
         "actor_gradient_clip": 1e9, # smaller cap prevents overfitting
         "update_delay":2
-        #optimizer: sgd, adam
-        #update by step, update all steps in one go
-        #action noise: ou noise vs normal noise
-        #testing: actor: batch norm + hidden size 256 min
-        #testing: critic: hidden size 256 min
-        #testing: done reward
+        #TEST? optimizer: sgd, adam
+        #TEST: update by step, update all steps in one go
+        #TEST? action noise: ou noise vs normal noise
     }
 }
 

@@ -198,7 +198,7 @@ def train():
     policy_noise = 0.2          # target policy smoothing noise
     noise_clip = 0.5
     policy_delay = 2            # delayed policy updates parameter
-    max_episodes = 3000         # max num of episodes
+    max_episodes = 10000         # max num of episodes
     max_timesteps = 2000        # max timesteps in one episode
     directory = "./preTrained/{}".format(env_name) # save trained models
     filename = "TD3_{}_{}".format(env_name, random_seed)
