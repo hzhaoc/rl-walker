@@ -7,8 +7,8 @@ d = \
 
     "agent": { # comment is benchmark proved to have worked
         "critic_loss_weight_regularization_l2": 0.0,
-        "critic_gradient_clip": 1e6, # smaller cap prevents overfitting
-        "actor_noise_switch": True,
+        "critic_gradient_clip": 1e9, # smaller cap prevents overfitting
+        "actor_noise_switch": False, # True
         "actor_noise_sigma" :0.1,  # TEST bigger ones
         "actor_noise_theta": 0.05,
         "policy_noise": 0.2,
@@ -17,7 +17,7 @@ d = \
         "gamma": 0.99,
         "critic_lr": 1e-3,
         "actor_lr": 1e-3,
-        "exp_sample_size": 256,
+        "exp_sample_size": 100, #256
         "bufsize": 500000,
         "optim_momentum": 1e-1,
         "actor_last_layer_weight_init": 3e-3,

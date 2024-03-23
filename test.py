@@ -9,8 +9,8 @@ from params import params, EnvNames
 envi = 121
 # agentClass = AgentDDPG
 agentClass = AgentTD3
-version = 7
-startEpisode = 400
+version = 9
+startEpisode = 0
 
 torch.autograd.set_detect_anomaly(mode=False, check_nan=True)
 env = Env.make(name=EnvNames[envi], render_mode="human")
@@ -53,15 +53,19 @@ for j in range(startEpisode+1, startEpisode+1+params.train.episodes):
 
     for i in range(params.train.steps):
         action = agent.act(state)
-        # print(action)
-        next_state, reward, terminated, truncated, info = env.step(action)
+
+        action = action + np.random.normal(0, 0.1, size=env.envInner.action_space.shape[0])
+        action = action.clip(env.action_low, env.action_high)
+
+        next_state, reward, done, truncated, info = env.step(action)
 
         r += reward
         #print(f"epoch {j} step {i}: rFwd {round(info['rFwd'], 2)}, rCtrl {round(info['rCtrl'], 2)}, rAlive {round(info['rAlive'], 2)}, rHeight {round(info['rHeight'], 2)}, rHead: {round(0.0, 2)}")
-        agent.buf.push(state, action, reward, next_state, terminated)
-        agent.update()
+        agent.buf.push(state, action, reward, next_state, done)
+        # agent.update()
 
-        if terminated:
+        if done or i == params.train.steps - 1:
+            agent.updateBatch(i+1)
             break
         state = next_state
 

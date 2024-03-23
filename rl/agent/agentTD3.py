@@ -32,7 +32,7 @@ class AgentTD3(Agent):
         # print(env.shape_action, env.shape_state)
         self.critic1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=self.env.shape_action[0],
+                                  output_size=1,#self.env.shape_action[0],
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
@@ -41,7 +41,7 @@ class AgentTD3(Agent):
                                   )
         self.critic2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=self.env.shape_action[0],
+                                  output_size=1,#self.env.shape_action[0],
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
@@ -69,7 +69,7 @@ class AgentTD3(Agent):
                                 )
         self.critic_target1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=self.env.shape_action[0],
+                                         output_size=1,#self.env.shape_action[0],
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
@@ -78,7 +78,7 @@ class AgentTD3(Agent):
                                          )
         self.critic_target2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=self.env.shape_action[0],
+                                         output_size=1,#self.env.shape_action[0],
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
@@ -120,6 +120,10 @@ class AgentTD3(Agent):
     def act(self, state: np.ndarray) -> np.ndarray:
         return self.actor.act(torch.FloatTensor(state).reshape(1, -1))  # input shape for act(): [1, 3]
 
+    def updateBatch(self, k) -> None:
+        for _ in range(k):
+            self.update()
+
     @override(Agent)
     def update(self) -> None:
         self.t += 1
@@ -148,15 +152,15 @@ class AgentTD3(Agent):
         critic_loss = self.critic1.criterion(q_modeled1, q_true_biased)
         self.critic1.optimizer.zero_grad()
         critic_loss.backward()
+        # nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
         self.critic1.optimizer.step()
-        nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
 
         q_modeled2 = self.critic2(s0, a0)
         critic_loss = self.critic2.criterion(q_modeled2, q_true_biased)
         self.critic2.optimizer.zero_grad()
         critic_loss.backward()
+        # nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
         self.critic2.optimizer.step()
-        nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
     
         # 2. update online actor
         if (self.t % self.update_delay):  # delay update
@@ -166,8 +170,8 @@ class AgentTD3(Agent):
         actor_loss = -1 * self.critic1(s0, self.actor(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor(s0)`
         self.actor.optimizer.zero_grad()
         actor_loss.backward()
+        # nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
         self.actor.optimizer.step()
-        nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
         for params in self.critic1.parameters():
             params.requires_grad = True
 
@@ -213,23 +217,25 @@ class ActorTD3(nn.Module, Actor):
         self.layer2 = nn.Linear(hidden_size, hidden_size)
         nn.init.uniform_(self.layer2.weight, -math.sqrt(1/hidden_size), math.sqrt(1/hidden_size))
         self.layer3 = nn.Linear(hidden_size, output_size)
-        self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)  # NOTE 1
+        self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)  # @see DDPG.py NOTE 1
         nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
     
-        #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
-        self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
+        # self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
         self.gradient_clip = gradient_clip
         self.noise = noise
         self.action_mid = torch.FloatTensor((action_low + action_high) / 2)
         self.action_radius = torch.FloatTensor((action_high - action_low) / 2)
+        self.action_high = float(action_high[0])
         self.output_size = output_size
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
         x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
         x = relu(self.layer2(x))
-        x = tanh(self.layer3bn(self.layer3(x)))
-        return self.actionScaler(x)
+        return torch.tanh(self.layer3(x)) * self.action_high
+        # x = tanh(self.layer3bn(self.layer3(x)))
+        # return self.actionScaler(x)
     
     def actionScaler(self, x: torch.Tensor) -> torch.Tensor:
         return self.action_radius * x + self.action_mid
@@ -244,9 +250,9 @@ class ActorTD3(nn.Module, Actor):
         self.train()  # set it back to default mode
         return action
 
-    def _act(self, state: torch.Tensor) -> torch.Tensor:
-        action = torch.FloatTensor(self.act(state)).reshape(-1, self.output_size)
-        return action
+    # def _act(self, state: torch.Tensor) -> torch.Tensor:
+    #     action = torch.FloatTensor(self.act(state)).reshape(-1, self.output_size)
+    #     return action
 
     @override(Actor)
     def update(self, s0: torch.Tensor, critic_fwd: Any) -> None:
@@ -272,8 +278,8 @@ class CriticTD3(nn.Module, Critic):
         nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
 
         self.criterion = nn.MSELoss()
-        #self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
-        self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
+        self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
+        # self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
         self.gradient_clip = gradient_clip
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
@@ -299,4 +305,5 @@ def infer_size(n):
         i <<= 1
     i <<= 1
     i <<= 1
-    return max(i, 256)
+    return 400
+    # return max(i, 256)
