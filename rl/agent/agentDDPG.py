@@ -267,7 +267,7 @@ def infer_size(n):
 
 """NOTE 1
 batch norm to reduce internal covariance shift, especially when previouos layer is nonlinear. 
-@see Batch Norm 2015 Paper. 
-`eps` for stability of scaler post unit normalization
-`momentum` for running population mean and variance. If set to None, all seen batches will be used to calcualte mean and variance
+@see the paper: Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift, zergey Ioffe, Christian Szegedy
+- `eps` for stability of scaler post unit normalization
+- `momentum` for running population mean and variance. If set to None, all seen batches will be used to calcualte mean and variance
 """

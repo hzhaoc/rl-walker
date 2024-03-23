@@ -123,6 +123,7 @@ class TD3:
             loss_Q1 = F.mse_loss(current_Q1, target_Q)
             self.critic_1_optimizer.zero_grad()
             loss_Q1.backward()
+            nn.utils.clip_grad.clip_grad_norm_(self.critic_1.parameters(), max_norm=1e6)
             self.critic_1_optimizer.step()
             
             # Optimize Critic 2:
@@ -130,6 +131,7 @@ class TD3:
             loss_Q2 = F.mse_loss(current_Q2, target_Q)
             self.critic_2_optimizer.zero_grad()
             loss_Q2.backward()
+            nn.utils.clip_grad.clip_grad_norm_(self.critic_2.parameters(), max_norm=1e6)
             self.critic_2_optimizer.step()
             
             # Delayed policy updates:
@@ -140,6 +142,7 @@ class TD3:
                 # Optimize the actor
                 self.actor_optimizer.zero_grad()
                 actor_loss.backward()
+                nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=1e9)
                 self.actor_optimizer.step()
                 
                 # Polyak averaging update:

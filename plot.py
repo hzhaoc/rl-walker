@@ -25,7 +25,10 @@ def plot(arr):
 # fnames = ["TestReacherEnv_DDPG","TestReacherEnv_TD"]
 # fnames = ["TestWalker2dEnv"]
 # fnames = ["TestBipedalWalker_TD3_1","TestBipedalWalker_TD3_2"]
-fnames = ["TestBipedalWalker_TD3_4", "TestBipedalWalker_TD3_5", "TestBipedalWalker_TD3_6", "TestBipedalWalker_TD3_7"]
+# fnames = ["TestBipedalWalker_TD3_4", "TestBipedalWalker_TD3_5", "TestBipedalWalker_TD3_6"] # reward
+# fnames = ["TestBipedalWalker_TD3_6", "TestBipedalWalker_TD3_7"] # hidden size
+# fnames = ["TestBipedalWalker_TD3_6", "TestBipedalWalker_TD3_8"] # epoch vs step update
+fnames = ["TestBipedalWalker_TD3_6", "TestBipedalWalker_TD3_benchmark_0", "TestBipedalWalker_TD3_benchmark_clipgrad_0", "TestBipedalWalker_TD3_benchmark_clipgrad_1"] # epoch vs step update
 
 
 arrByfname = defaultdict(list)
@@ -36,7 +39,7 @@ for fname in fnames:
 
 
 plt.figure(1)
-for j, k in enumerate([2,10,100]): # moving average window size
+for j, k in enumerate([1,10,100]): # moving average window size
     B = defaultdict(list)
     for fname in arrByfname:
         A = arrByfname[fname]
