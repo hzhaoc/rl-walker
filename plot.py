@@ -34,7 +34,7 @@ def plot(arr):
 # [v4,v5,v6]:
 # -> done reward 
 # -> NOTE: use small done reward
-test1 = ["TestBipedalWalker_TD3_4", "TestBipedalWalker_TD3_5", "TestBipedalWalker_TD3_6"]
+test1 = ["TestBipedalWalker_TD3_4_0", "TestBipedalWalker_TD3_5", "TestBipedalWalker_TD3_6"]
 
 # [v6,v7]: 
 # -> hidden size 
