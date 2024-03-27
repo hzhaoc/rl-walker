@@ -1,25 +1,14 @@
-# TODO: compare our TD3 to others'
-# TD3_4:  hidden size = 256  done reward = -1    update by step   batch_size = 256   ou noise      critic_output_action_space    batch_norm      grad_clip       optim.sgd
-# TD3_5:  hidden size = 256  done reward = -50   update by step   batch_size = 256   ou noise      critic_output_action_space    batch_norm      grad_clip       optim.sgd
-# TD3_6:  hidden size = 256  done reward = -100  update by step   batch_size = 256   ou noise      critic_output_action_space    batch_norm      grad_clip       optim.sgd
-# TD3_7:  hidden size = 16   done reward = -100  update by step   batch_size = 256   ou noise      critic_output_action_space    batch_norm      grad_clip       optim.sgd
-# TD3_8:  hidden size = 256  done reward = -100  update by epoch  batch_size = 256   ou noise      critic_output_action_space    batch_norm      grad_clip       optim.sgd
-# TD3_9:  hidden size = 400  done reward = -100  update by epoch  batch_size = 100   normal noise  critic_output_1               no_batch_norm   no_grad_clip    optim.adam
-# TD3_10  hidden size = 256  done reward = -100  update by step   batch_size = 256   ou noise      critic_output_1               no_batch_norm   grad_clip       optim.sgd
-
-
-# TD3_6:  hidden size = 256  done reward = -100  update by step   batch_size = 256   ou noise      critic_output_action_space    batch_norm      grad_clip       optim.sgd
-# TD3_10  hidden size = 256  done reward = -100  update by step   batch_size = 256   ou noise      critic_output_1               no_batch_norm   grad_clip       optim.sgd
-
-
-# test result:
-# suggested tuning                    base
-# use small penalty for done reward   v4,v5,v6
-# use big hiddren size                v6,v7
-# use step update                     v7,v8
-# grad clip not too important         v6,bm0,bm_gradclip0,bm_gradclip1
-
-
+# TODO: compare our TD3 to benchmar in bipedalwalker, and fine tine it
+# test:
+# - optimizer                   
+# - noise level                 
+# - noise type                  
+# - batch norm                  little effect, nice to have
+# - grad clip                   little effect
+# - done reward                 use close to 0 done reward
+# - network size                use larger network
+# - epoch or step update        use step update
+# - batch size                  little effect, nice to set to 1
 
 #  TODO: try different agents:
 #       - A3C: did well on leg balancing
@@ -42,6 +31,5 @@
         
 # TODO: when updating online actor, use online or offline critic?
 # TODO: a Param class to contain all hyper parameters
-# TODO: critic output shape = action# or 1?
 # TODO: PPO and other potentially intrinsically better agents
 # TODO: fix TD3 action output action with nan

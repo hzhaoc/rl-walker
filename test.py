@@ -9,15 +9,14 @@ from params import params, EnvNames
 envi = 121
 # agentClass = AgentDDPG
 agentClass = AgentTD3
-version = 9
-startEpisode = 0
+version = 12
+startEpisode = 1200
 
 torch.autograd.set_detect_anomaly(mode=False, check_nan=True)
 env = Env.make(name=EnvNames[envi], render_mode="human")
 agent = agentClass(env=env, 
                   critic_loss_weight_regularization_l2=params.agent.critic_loss_weight_regularization_l2,
                   critic_gradient_clip=params.agent.critic_gradient_clip,
-                  actor_noise_switch=params.agent.actor_noise_switch,  # exploration switch
                   actor_noise_sigma=params.agent.actor_noise_sigma,  # volatility of noise in actor
                   actor_noise_theta=params.agent.actor_noise_theta, # temporal scaler in actor noise
                   policy_noise=params.agent.policy_noise, # noise for training only
@@ -38,6 +37,7 @@ agent = agentClass(env=env,
                   actor_loss_weight_regularization_l2=params.agent.actor_loss_weight_regularization_l2,
                   actor_gradient_clip=params.agent.actor_gradient_clip,
                   update_delay=params.agent.update_delay,  # how many steps it take to update online actor, target actor, target critics once.
+                  params=params, # TODO: a Param class to hold all hyper parameters
         )
 
 if startEpisode > 0:
@@ -45,7 +45,7 @@ if startEpisode > 0:
 
 
 # training
-fileRewards = open(rf"play/{EnvNames[envi]}.txt", "w+", 1)
+fileRewards = open(rf"test/{EnvNames[envi]}.txt", "w+", 1)
 for j in range(startEpisode+1, startEpisode+1+params.train.episodes):
     r = 0.0
     state, _ = env.reset()
@@ -54,19 +54,26 @@ for j in range(startEpisode+1, startEpisode+1+params.train.episodes):
     for i in range(params.train.steps):
         action = agent.act(state)
 
-        action = action + np.random.normal(0, 0.1, size=env.envInner.action_space.shape[0])
-        action = action.clip(env.action_low, env.action_high)
+        # action = action + np.random.normal(0, 0.1, size=env.envInner.action_space.shape[0])
+        # action = action.clip(env.action_low, env.action_high)
 
         next_state, reward, done, truncated, info = env.step(action)
 
         r += reward
         #print(f"epoch {j} step {i}: rFwd {round(info['rFwd'], 2)}, rCtrl {round(info['rCtrl'], 2)}, rAlive {round(info['rAlive'], 2)}, rHeight {round(info['rHeight'], 2)}, rHead: {round(0.0, 2)}")
         agent.buf.push(state, action, reward, next_state, done)
-        # agent.update()
 
-        if done or i == params.train.steps - 1:
-            agent.updateBatch(i+1)
-            break
+        if not params.train.batchUpdate:
+            # update by step
+            agent.update()
+            if done:
+                break
+        else:
+            # update by epoch
+            if done or i == params.train.steps - 1:
+                agent.updateBatch(i+1)
+                break
+
         state = next_state
 
     line = "{},{}\n".format(j, round(r, 2))

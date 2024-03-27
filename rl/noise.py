@@ -1,10 +1,7 @@
-"""noise.py: stochastic process simulation"""
-
-__author__      = "rail-berkeley"
-
-
 import numpy as np
 from rl.util import *
+from params import Params
+from rl.env import Env
 
 
 class Noise:
@@ -19,6 +16,27 @@ class Noise:
     @abstract
     def get_action(self, action: np.ndarray) -> np.ndarray:
         raise NotImplementedError
+
+    @staticmethod
+    def make(params: Params, env: Env):
+        if params.agent.noise_type == 'ou':
+            print(f"use ou noise of sigma {params.agent.actor_noise_sigma}, theta {params.agent.actor_noise_theta}")
+            return OUNoise(action_dim=env.shape_action[0],
+                            low=env.action_low,
+                            high=env.action_high,
+                            min_sigma=params.agent.actor_noise_sigma,
+                            max_sigma=params.agent.actor_noise_sigma,
+                            theta=params.agent.actor_noise_theta)
+        if params.agent.noise_type == 'normal':
+            print(f'use normal noise of sigma {params.agent.actor_noise_sigma}')
+            return NormalNoise(sigma=params.agent.actor_noise_sigma, 
+                                dim=env.shape_action[0],
+                                low=env.action_low,
+                                high=env.action_high)
+        if params.agent.noise_type == 'empty':
+            print('use empty noise')
+            return EmptyNoise()
+        raise ValueError(f"noise type {params.agent.type} is not supported")
 
 
 class EmptyNoise(Noise):
@@ -38,8 +56,31 @@ class EmptyNoise(Noise):
         return action
 
 
-# TODO: make exploration nosie more intelligent: explore more in worse situation; explore less in better situation
-#       how to measure if a situation is getting worse or better? analyze epoch-reward long-term trend
+class NormalNoise(Noise):
+    '''noise of normal distribution with mu of 0, sigma from user input'''
+    def __init__(self, sigma=1, dim=1, low=-float("inf"),high=float("inf")):
+        self.reset()
+        self.sigma = sigma
+        self.dim = dim # action dimension
+        self.low = low # clip action value low
+        self.high = high # clip action value high
+    
+    @override(Noise)
+    def reset(self):
+        pass
+    
+    @override(Noise)
+    def evolve_state(self) -> None:
+        pass
+    
+    @override(Noise)
+    def get_action(self, action: np.ndarray) -> np.ndarray:
+        # input and output shape: (k, ),  1d
+        action = action + np.random.normal(0, self.sigma, size=self.dim)
+        action = action.clip(self.low, self.high)
+        return action
+
+
 class OUNoise(Noise):
     """
     Ornstein-Ulhenbeck Process
@@ -52,6 +93,7 @@ class OUNoise(Noise):
     where Wt denotes the Wiener process
 
     Based on the rllab implementation.
+    author: rail-berkeley
     """
     def __init__(self, action_dim, low=-float("inf"),high=float("inf"), mu=0.0, theta=0.15, max_sigma=0.3, min_sigma=0.3, decay_period=100000):
         self.mu           = mu
@@ -61,9 +103,8 @@ class OUNoise(Noise):
         self.min_sigma    = min_sigma
         self.decay_period = decay_period
         self.action_dim   = action_dim
-        # print('low', low)
-        self.low          = low
-        self.high         = high
+        self.low          = low # clip low
+        self.high         = high # clip high
         self.reset()
     
     @override(Noise)
@@ -78,7 +119,7 @@ class OUNoise(Noise):
     
     @override(Noise)
     def get_action(self, action: np.ndarray) -> np.ndarray:
-        # action shape: (action space, ),  1d
+        # input and output shape: (k, ),  1d
         self.evolve_state()
         self.sigma = self.max_sigma - (self.max_sigma - self.min_sigma) * min(1.0, self.t / self.decay_period)
         res = np.clip(action + self.xt, self.low, self.high)

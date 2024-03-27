@@ -19,34 +19,38 @@ PARAMS_MAX = 1e8
 
 
 class AgentTD3(Agent):
+    # TODO: implement __repr__
     """
     Twin-Delayed Deep Deterministic Policy Gradient agent
     theory: Addressing Function Approximation Error in Actor-Critic Methods, Scott Fujimoto et al
     """
     def __init__(self, env: Env, tau: float=0.1, gamma: float=0.95, critic_lr=1e-3, actor_lr=1e-3, bufsize: int=10_000, optim_momentum: float = 1e-1,
                        actor_last_layer_weight_init: float = 3e-3, critic_last_layer_weight_init: float = 3e-4, critic_bn_eps: float = 1e-4, critic_bn_momentum: float = 1e-2,
-                       actor_noise_switch=False, actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
-                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6, update_delay=100, policy_noise = 0.2, noise_clip = 0.5) -> None:
+                       actor_noise_sigma=0.1, actor_noise_theta=0.1, exp_sample_size=128, actor_loss_weight_regularization_l2: float = 0.0, 
+                       critic_loss_weight_regularization_l2: float = 0.0, critic_gradient_clip: float = 1e6, actor_gradient_clip: float = 1e6, update_delay=100, policy_noise = 0.2, noise_clip = 0.5,
+                       params: Params = None) -> None:
         super().__init__()
         self.env = env
         # print(env.shape_action, env.shape_state)
         self.critic1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=1,#self.env.shape_action[0],
+                                  output_size=self.env.shape_action[0] if not params.agent.actor_output_size else params.agent.actor_output_size,
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
                                   loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                   gradient_clip=critic_gradient_clip,
+                                  optim_type=params.agent.optim_type,
                                   )
         self.critic2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                   hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                  output_size=1,#self.env.shape_action[0],
+                                  output_size=self.env.shape_action[0] if not params.agent.actor_output_size else params.agent.actor_output_size,
                                   lr=critic_lr,
                                   optim_momentum=optim_momentum,
                                   last_layer_weight_init=critic_last_layer_weight_init,
                                   loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                   gradient_clip=critic_gradient_clip,
+                                  optim_type=params.agent.optim_type,
                                   )
         self.actor = ActorTD3(input_size=self.env.shape_state[0],
                                 hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
@@ -56,34 +60,33 @@ class AgentTD3(Agent):
                                 last_layer_weight_init=actor_loss_weight_regularization_l2,
                                 eps=critic_bn_eps,
                                 bn_momentum=critic_bn_momentum,
-                                noise=OUNoise(action_dim=self.env.shape_action[0],
-                                              low=self.env.action_low,
-                                              high=self.env.action_high,
-                                              min_sigma=actor_noise_sigma,
-                                              max_sigma=actor_noise_sigma,
-                                              theta=actor_noise_theta) if actor_noise_switch else EmptyNoise(),
                                 loss_weight_regularization_l2=actor_loss_weight_regularization_l2,
                                 gradient_clip=actor_gradient_clip,
                                 action_low=self.env.action_low,
                                 action_high=self.env.action_high,
+                                noise=Noise.make(params, self.env),
+                                do_batch_norm=params.agent.actor_do_batch_norm,
+                                optim_type=params.agent.optim_type,
                                 )
         self.critic_target1 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=1,#self.env.shape_action[0],
+                                         output_size=self.env.shape_action[0] if not params.agent.actor_output_size else params.agent.actor_output_size,
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
                                          loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                          gradient_clip=critic_gradient_clip,
+                                         optim_type=params.agent.optim_type,
                                          )
         self.critic_target2 = CriticTD3(input_size=self.env.shape_state[0]+self.env.shape_action[0],
                                          hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
-                                         output_size=1,#self.env.shape_action[0],
+                                         output_size=self.env.shape_action[0] if not params.agent.actor_output_size else params.agent.actor_output_size,
                                          lr=critic_lr,
                                          optim_momentum=optim_momentum,
                                          last_layer_weight_init=critic_last_layer_weight_init,
                                          loss_weight_regularization_l2=critic_loss_weight_regularization_l2,
                                          gradient_clip=critic_gradient_clip,
+                                         optim_type=params.agent.optim_type,
                                          )
         self.actor_target = ActorTD3(input_size=self.env.shape_state[0], 
                                        hidden_size=infer_size(self.env.shape_state[0]+self.env.shape_action[0]),
@@ -97,6 +100,8 @@ class AgentTD3(Agent):
                                        gradient_clip=actor_gradient_clip,
                                        action_low=self.env.action_low,
                                        action_high=self.env.action_high,
+                                       do_batch_norm=params.agent.actor_do_batch_norm,
+                                       optim_type=params.agent.optim_type,
                                        )
         for param, param_target in zip(self.actor.parameters(), self.actor_target.parameters()):
             param_target.data.copy_(param.data)
@@ -152,14 +157,16 @@ class AgentTD3(Agent):
         critic_loss = self.critic1.criterion(q_modeled1, q_true_biased)
         self.critic1.optimizer.zero_grad()
         critic_loss.backward()
-        # nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
+        if self.critic1.gradient_clip < 1e10:
+            nn.utils.clip_grad.clip_grad_norm_(self.critic1.parameters(), max_norm=self.critic1.gradient_clip)
         self.critic1.optimizer.step()
 
         q_modeled2 = self.critic2(s0, a0)
         critic_loss = self.critic2.criterion(q_modeled2, q_true_biased)
         self.critic2.optimizer.zero_grad()
         critic_loss.backward()
-        # nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
+        if self.critic2.gradient_clip < 1e10:
+            nn.utils.clip_grad.clip_grad_norm_(self.critic2.parameters(), max_norm=self.critic2.gradient_clip)
         self.critic2.optimizer.step()
     
         # 2. update online actor
@@ -170,7 +177,8 @@ class AgentTD3(Agent):
         actor_loss = -1 * self.critic1(s0, self.actor(s0)).mean()  # loss is assumed to be differentialable w.r.t. action `self.actor(s0)`
         self.actor.optimizer.zero_grad()
         actor_loss.backward()
-        # nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
+        if self.actor.gradient_clip < 1e10:
+            nn.utils.clip_grad.clip_grad_norm_(self.actor.parameters(), max_norm=self.actor.gradient_clip)
         self.actor.optimizer.step()
         for params in self.critic1.parameters():
             params.requires_grad = True
@@ -207,10 +215,11 @@ class AgentTD3(Agent):
 
 
 class ActorTD3(nn.Module, Actor):
+    # TODO: implement __repr__
     """neural netowrk polixy approximator: f(s) -> a"""
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-3, 
                        eps: float = 1e-4, bn_momentum: float = 1e-2, noise: Noise = EmptyNoise(), loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6,
-                       action_low: np.ndarray = np.array([]), action_high: np.ndarray = np.array([])) -> None:
+                       action_low: np.ndarray = np.array([]), action_high: np.ndarray = np.array([]), do_batch_norm: bool = True, optim_type: str = "sgd") -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size), math.sqrt(1/input_size))
@@ -219,23 +228,32 @@ class ActorTD3(nn.Module, Actor):
         self.layer3 = nn.Linear(hidden_size, output_size)
         self.layer3bn = nn.BatchNorm1d(num_features=output_size, eps=eps, momentum=bn_momentum)  # @see DDPG.py NOTE 1
         nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
-    
-        self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
-        # self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
+
+        if optim_type == 'adam':
+            print("actor uses adam optimizer")
+            self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
+        else:
+            # default sgd
+            print("actor uses sgd optimizer")
+            self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
         self.gradient_clip = gradient_clip
         self.noise = noise
         self.action_mid = torch.FloatTensor((action_low + action_high) / 2)
         self.action_radius = torch.FloatTensor((action_high - action_low) / 2)
         self.action_high = float(action_high[0])
         self.output_size = output_size
+        self.do_batch_norm = do_batch_norm
+        print(f"actor batch norm set to {self.do_batch_norm}")
+        print(f"actor gradient clip level: {gradient_clip} (no clip above 1e10)")
         
     def forward(self, state: torch.Tensor) -> torch.Tensor:
         x = state
         x = relu(self.layer1(x))  # ways to alliviate vanishing gradient: relu / momental SGD / careful weight init / small learning rate / batch norm
         x = relu(self.layer2(x))
-        return torch.tanh(self.layer3(x)) * self.action_high
-        # x = tanh(self.layer3bn(self.layer3(x)))
-        # return self.actionScaler(x)
+        if not self.do_batch_norm:
+            return torch.tanh(self.layer3(x)) * self.action_high
+        x = tanh(self.layer3bn(self.layer3(x)))
+        return self.actionScaler(x)
     
     def actionScaler(self, x: torch.Tensor) -> torch.Tensor:
         return self.action_radius * x + self.action_mid
@@ -264,11 +282,12 @@ class ActorTD3(nn.Module, Actor):
 
 
 class CriticTD3(nn.Module, Critic):
+    # TODO: implement __repr__
     """
     neural-network value approximator: g(s, a) -> value
     """
     def __init__(self, input_size: int, hidden_size: int, output_size: int, lr: float = 3e-4, optim_momentum: float = 1e-1, last_layer_weight_init: float = 3e-4, 
-    loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6) -> None:
+    loss_weight_regularization_l2: float = 0.0, gradient_clip: float = 1e6, optim_type: str ='sgd') -> None:
         super().__init__()
         self.layer1 = nn.Linear(input_size, hidden_size)
         nn.init.uniform_(self.layer1.weight, -math.sqrt(1/input_size,), math.sqrt(1/input_size))
@@ -278,9 +297,15 @@ class CriticTD3(nn.Module, Critic):
         nn.init.uniform_(self.layer3.weight, -last_layer_weight_init, last_layer_weight_init)
 
         self.criterion = nn.MSELoss()
-        self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
-        # self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
+        if optim_type == 'adam':
+            print("critic uses adam optimizer")
+            self.optimizer = optim.Adam(self.parameters(), lr=lr)  # SGD with individually-adaptive learning rate
+        else:
+            # default sgd
+            print("critic uses sgd optimizer")
+            self.optimizer = optim.SGD(self.parameters(), lr=lr, momentum=1-optim_momentum, weight_decay=loss_weight_regularization_l2)  # SGD with momentum
         self.gradient_clip = gradient_clip
+        print(f"critic gradient clip level: {gradient_clip} (no clip above 1e10)")
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         x = torch.concat([state, action], 1)
@@ -305,5 +330,4 @@ def infer_size(n):
         i <<= 1
     i <<= 1
     i <<= 1
-    return 400
-    # return max(i, 256)
+    return max(i, 256)
